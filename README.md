@@ -2,7 +2,7 @@
 Preprocessing operations over SLC images for SAR2CUBE
 
 # Usage
-Update config.project with local paths
+Update CONF/config.project with local paths
 
 Update CONF/order_file_test.csv
 
