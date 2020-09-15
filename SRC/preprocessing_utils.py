@@ -80,7 +80,7 @@ class model():
                 ImageUnzip.append(os.path.join(diroutput, os.path.splitext(os.path.basename(imagelist.Image[i]))[0]+'.SAFE', 'manifest.safe'))
                 ImageName.append(os.path.splitext(os.path.basename(imagelist.Image[i]))[0])
             elif os.path.splitext(imagelist.Image[i])[1] == '.safe':
-                if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))):
+                if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))) or self.overwrite == '1':
                     shutil.copytree(os.path.dirname(imagelist.Image[i]), os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i]))))
                 ImageName.append(os.path.basename(os.path.dirname(imagelist.Image[i])).split('.')[0])
                 ImageUnzip.append(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])), 'manifest.safe'))
@@ -95,7 +95,6 @@ class model():
 
     def run_alignmentlist(self, pairspath, pairsdate):
         gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_args_wkt.xml')
-        #gptxml_file = os.path.join('/media/guadarrama/PROYECTOS/SAR2CUBE/Git/RES', 'TOPSAR_Coreg_Interferogram_ESD_args_wkt.xml')
         
         #CHANGE OUTPUT SUFIX
         output_sufix = '_Aligned'
@@ -127,9 +126,9 @@ class model():
                     print('Image format not supported: ' + input2)
                     sys.exit()
                 output1 = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix)
-                outputfile = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix + '_' + input3[k] + '.dim')
+                outputfile = os.path.join(output1 + '_' + input3[k] + '.dim')
                 #OVERWRITE CONDITION FOR SUBSWATH GENERATION
-                if not os.path.isfile(outputfile) or self.overwrite == '1':
+                if not os.path.isfile(output1+'.dim') or self.overwrite == '1':
                     try:
                         p = subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4,'-Ptarget1='+outputfile])
                     except:
@@ -164,7 +163,6 @@ class model():
         self.processdf['Processing_minutes'] = outputtimes
         
     def TOPS_Merge_subswaths (self, imagepathlist, outputfile, pathgpt):
-        #gptxml_file = '/media/guadarrama/PROYECTOS/SAR2CUBE/WP2000/GPT_command_line/merge_3subswaths.xml'
         if(len(imagepathlist)==2):
             gptxml_file = os.path.join(self.DirProject, 'RES', 'merge_2subswaths.xml')
             input1 = imagepathlist[0]
@@ -190,9 +188,7 @@ class model():
         #Unzip and get initial metadata
         imagelist = self.unzipgetmeta (imagelist)
 
-        #TO-DO CHECK IF IMAGES ARE TYPE SLC
-
-        #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, ONE ROUND PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MEDIAN' DATE OF THE LIST)
+        #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, ONE ROUND PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
         #Identify master image row and set up slave images dataframe
         if any (imagelist['ImageDate'].str.contains(self.datemaster)):
             #Master image is reindexed to the top of the df
@@ -214,52 +210,45 @@ class model():
         self.processdf.to_csv(os.path.join(self.diroutorder, 'process.csv'), sep=';', index=False)
         
     def generate_baselinelist (self):
-        #TO-DO CHECK IF PROCESSDF AND COREGISTERED DATA EXIST
-        if self.processdf is None:
-            print('Process database not generated, run alignment over a stack of images first')
-            sys.exit()
-            #TODO Check si existen las imágenes alineadas
-        else:
-            self.baselinelist = self.processdf.copy()
-            self.baselinelist['Master'] = self.datemaster
-            self.baselinelist['Slave'] = self.processdf['Image_date']
-            self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles'][i], 'Perp Baseline')[1] for i in range(len(self.processdf))]
-            self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles'][i], 'Temp Baseline')[1] for i in range(len(self.processdf))]
-            self.baselinelist = self.baselinelist.drop(['Image_date', 'Outputfiles', 'Processing_minutes'], axis=1)
-            waninglist = self.baselinelist.copy()
-            while len(waninglist)>1:
-                for i in range(len(waninglist)-1):
-                    perp = float(waninglist['Perp_Baseline'][0]) - float(waninglist['Perp_Baseline'][i+1])
-                    temp = float(waninglist['Temp_Baseline'][0]) - float(waninglist['Temp_Baseline'][i+1])
-                    #self.baselinelist.append(pd.Series([str(self.baselinelist['Slave'][0]), str(self.baselinelist['Slave'][i+1]), perp, temp]), ignore_index=True)
-                    self.baselinelist.loc[len(self.baselinelist)] = str(waninglist['Slave'][0]), str(waninglist['Slave'][i+1]), perp, temp
-                waninglist = waninglist.drop(0)
-                waninglist = waninglist.reset_index(drop=True)
-            #Filter table with maxbasetemp and maxbaseperp
-            self.baselinelist['Temp_Baseline'] = abs(pd.to_numeric(self.baselinelist['Temp_Baseline']))
-            self.baselinelist['Perp_Baseline'] = abs(pd.to_numeric(self.baselinelist['Perp_Baseline']))
-            if self.maxbasetemp != '':
-                if self.maxbaseperp != '':
-                    self.baselinefiltered = self.baselinelist[(self.baselinelist.Temp_Baseline <= self.maxbasetemp) & (self.baselinelist.Perp_Baseline <= self.maxbaseperp)]
-                else:
-                    self.baselinefiltered = self.baselinelist[(self.baselinelist.Temp_Baseline <= self.maxbasetemp)]
+        self.baselinelist = self.processdf.copy()
+        self.baselinelist['Master'] = self.datemaster
+        self.baselinelist['Slave'] = self.processdf['Image_date']
+        self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles'][i], 'Perp Baseline')[1] for i in range(len(self.processdf))]
+        self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles'][i], 'Temp Baseline')[1] for i in range(len(self.processdf))]
+        self.baselinelist = self.baselinelist.drop(['Image_date', 'Outputfiles', 'Processing_minutes'], axis=1)
+        waninglist = self.baselinelist.copy()
+        while len(waninglist)>1:
+            for i in range(len(waninglist)-1):
+                perp = float(waninglist['Perp_Baseline'][0]) - float(waninglist['Perp_Baseline'][i+1])
+                temp = float(waninglist['Temp_Baseline'][0]) - float(waninglist['Temp_Baseline'][i+1])
+                self.baselinelist.loc[len(self.baselinelist)] = str(waninglist['Slave'][0]), str(waninglist['Slave'][i+1]), perp, temp
+            waninglist = waninglist.drop(0)
+            waninglist = waninglist.reset_index(drop=True)
+        #Filter table with maxbasetemp and maxbaseperp
+        self.baselinelist['Temp_Baseline'] = abs(pd.to_numeric(self.baselinelist['Temp_Baseline']))
+        self.baselinelist['Perp_Baseline'] = abs(pd.to_numeric(self.baselinelist['Perp_Baseline']))
+        if self.maxbasetemp != '':
+            if self.maxbaseperp != '':
+                self.baselinefiltered = self.baselinelist[(self.baselinelist.Temp_Baseline <= self.maxbasetemp) & (self.baselinelist.Perp_Baseline <= self.maxbaseperp)]
             else:
-                if self.maxbaseperp != '':
-                    self.baselinefiltered = self.baselinelist[(self.baselinelist.Perp_Baseline <= self.maxbaseperp)]
-                else:
-                    self.baselinefiltered = self.baselinelist.copy()
-            #Fill output files if pair is already coregistered
-            for i in range(len(self.processdf)):
-                for j in range(len(self.baselinefiltered)):
-                    if self.processdf['Image_date'][i] == self.baselinefiltered['Slave'][j] and self.baselinefiltered['Master'][j] == self.datemaster:
-                        self.baselinefiltered.loc[j, 'Outputfiles'] = self.processdf['Outputfiles'][i]
-            self.baselinefiltered.to_csv(os.path.join(self.diroutorder, 'baselines.csv'), sep=';', index=False)
-    
+                self.baselinefiltered = self.baselinelist[(self.baselinelist.Temp_Baseline <= self.maxbasetemp)]
+        else:
+            if self.maxbaseperp != '':
+                self.baselinefiltered = self.baselinelist[(self.baselinelist.Perp_Baseline <= self.maxbaseperp)]
+            else:
+                self.baselinefiltered = self.baselinelist.copy()
+        self.baselinefiltered.to_csv(os.path.join(self.diroutorder, 'baselines.csv'), sep=';', index=False)
+
     def generate_interferogram(self):
         print('entra generate interf')
         gptxml_file = os.path.join(self.DirProject, 'RES', 'Interferogram_Multilook.xml')
-        for i in range(len(self.baselinefiltered)):
-            pass
+        #for i in range(len(self.baselinefiltered)):
+        #Fill output files if pair is already coregistered
+        for i in range(len(self.processdf)):
+            for j in range(len(self.baselinefiltered)):
+                if self.processdf['Image_date'][i] == self.baselinefiltered['Slave'][j] and self.baselinefiltered['Master'][j] == self.datemaster:
+                    self.baselinefiltered.loc[j, 'Outputfiles'] = self.processdf['Outputfiles'][i]
+
             
 
         # output_sufix = '_Aligned'

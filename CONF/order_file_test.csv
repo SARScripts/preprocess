@@ -1,4 +1,3 @@
 Order_ID;User;Date_ordering;Process_type;Parameter_list
 1;user1;2020-05-27;alignment_interferogram;/media/guadarrama/PROYECTOS/SAR2CUBE/Git/CONF/list_images.csv, /media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT, overwrite=0, ,1.517 41.714 2.541 41.063
 2;user1;2020-05-27;generate_list; 30, 150
-
