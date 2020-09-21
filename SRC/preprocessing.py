@@ -50,7 +50,7 @@ if __name__ == "__main__":
     orders = pd.read_csv(OrderFile, sep=';', decimal=',')
     
     #PARAMETERS NEEDED FOR EVERY PROCESSING
-    #'alignment_interferogram': list_of_images (essential), masterimage_date (if not specified, all combinations processed), AOI (if not specified whole scene considered)
+    #'alignment_interferogram': list_of_images (essential), masterimage_date (if not specified, master date taken as the closest date to mid-point between first and last date), AOI (if not specified whole scene considered)
     #'generate_pairs_list': list_of_images (essential)
     
     #A PROCESSING OBJECT IS CREATED FOR THE WHOLE PROCESSING CHAIN

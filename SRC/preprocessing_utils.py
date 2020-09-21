@@ -81,6 +81,8 @@ class model():
                 ImageName.append(os.path.splitext(os.path.basename(imagelist.Image[i]))[0])
             elif os.path.splitext(imagelist.Image[i])[1] == '.safe':
                 if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))) or self.overwrite == '1':
+                    if os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))):
+                        shutil.rmtree(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i]))))
                     shutil.copytree(os.path.dirname(imagelist.Image[i]), os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i]))))
                 ImageName.append(os.path.basename(os.path.dirname(imagelist.Image[i])).split('.')[0])
                 ImageUnzip.append(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])), 'manifest.safe'))
@@ -94,7 +96,7 @@ class model():
         return imagelist
 
     def run_alignmentlist(self, pairspath, pairsdate):
-        gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_args_wkt.xml')
+        gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_args_wkt.xml')
         
         #CHANGE OUTPUT SUFIX
         output_sufix = '_Aligned'
@@ -128,7 +130,7 @@ class model():
                 output1 = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix)
                 outputfile = os.path.join(output1 + '_' + input3[k] + '.dim')
                 #OVERWRITE CONDITION FOR SUBSWATH GENERATION
-                if not os.path.isfile(output1+'.dim') or self.overwrite == '1':
+                if (not os.path.isfile(output1+'.dim')) or self.overwrite == '1':
                     try:
                         p = subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4,'-Ptarget1='+outputfile])
                     except:
@@ -188,26 +190,28 @@ class model():
         #Unzip and get initial metadata
         imagelist = self.unzipgetmeta (imagelist)
 
-        #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, ONE ROUND PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
+        #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, RUN ALIGNMENT PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
         #Identify master image row and set up slave images dataframe
-        if any (imagelist['ImageDate'].str.contains(self.datemaster)):
-            #Master image is reindexed to the top of the df
-            masterdf = imagelist[imagelist['ImageDate'].str.contains(self.datemaster)]
-            slavedf = imagelist.copy()
-            slavedf = slavedf.drop(slavedf[imagelist['ImageDate'].str.contains(self.datemaster)].index)
-            pairspath = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageUnzip')
-            pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate')
-            self.run_alignmentlist(pairspath, pairsdate)
-        else:
+        if not any (imagelist['ImageDate'].str.contains(self.datemaster)):
             datelist = list(imagelist.ImageDate.sort_values().astype(int))
             self.datemaster = str(datelist[min(range(len(datelist)), key = lambda i: abs(datelist[i]-(datelist[-1]+datelist[0])/2))])
-            masterdf = imagelist[imagelist['ImageDate'].str.contains(self.datemaster)]
-            slavedf = imagelist.copy()
-            slavedf = slavedf.drop(slavedf[imagelist['ImageDate'].str.contains(self.datemaster)].index)
-            pairspath = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageUnzip')
-            pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate')
-            self.run_alignmentlist(pairspath, pairsdate)
-        self.processdf.to_csv(os.path.join(self.diroutorder, 'process.csv'), sep=';', index=False)
+        #Master image is reindexed to the top of the df
+        masterdf = imagelist[imagelist['ImageDate'].str.contains(self.datemaster)]
+        slavedf = imagelist.copy()
+        slavedf = slavedf.drop(slavedf[imagelist['ImageDate'].str.contains(self.datemaster)].index)
+        pairspath = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageUnzip')
+        pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate')
+        self.run_alignmentlist(pairspath, pairsdate)
+        # else:
+        #     datelist = list(imagelist.ImageDate.sort_values().astype(int))
+        #     self.datemaster = str(datelist[min(range(len(datelist)), key = lambda i: abs(datelist[i]-(datelist[-1]+datelist[0])/2))])
+        #     masterdf = imagelist[imagelist['ImageDate'].str.contains(self.datemaster)]
+        #     slavedf = imagelist.copy()
+        #     slavedf = slavedf.drop(slavedf[imagelist['ImageDate'].str.contains(self.datemaster)].index)
+        #     pairspath = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageUnzip')
+        #     pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate')
+        #     self.run_alignmentlist(pairspath, pairsdate)
+        # self.processdf.to_csv(os.path.join(self.diroutorder, 'process.csv'), sep=';', index=False)
         
     def generate_baselinelist (self):
         self.baselinelist = self.processdf.copy()
