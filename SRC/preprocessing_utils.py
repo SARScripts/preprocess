@@ -33,7 +33,7 @@ def mountpairs (dflist, field): #Pairs combining the first element with the rest
     return pairs
 
 class model():
-    def __init__(self, process_type, imagelistfile, diroutorder, overwrite, datemaster, AOI, pathgpt, DirProject):
+    def __init__(self, process_type, imagelistfile, diroutorder, overwrite, datemaster, AOI, pathgpt, snappypath, DirProject):
         self.process_type = process_type
         self.imagelistfile = imagelistfile
         self.datemaster = datemaster
@@ -45,6 +45,7 @@ class model():
         self.diroutorder = diroutorder
         self.overwrite = overwrite
         self.pathgpt = pathgpt
+        self.snappypath = snappypath
         self.DirProject = DirProject
         self.processdf = pd.DataFrame()
         self.baselinelist = pd.DataFrame()
@@ -54,6 +55,10 @@ class model():
         
         if not os.path.exists(self.diroutorder):
             os.makedirs(self.diroutorder)
+            
+        sys.path.append(self.snappypath)
+        import snappy
+        from snappy import ProductIO
 
     def searchMetabytag(self, metafilepath, tag):
         meta = []
@@ -96,7 +101,7 @@ class model():
         return imagelist
 
     def run_alignmentlist(self, pairspath, pairsdate):
-        gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_args_wkt.xml')
+        gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_args_wkt.xml')
         
         #CHANGE OUTPUT SUFIX
         output_sufix = '_Aligned'
@@ -202,17 +207,7 @@ class model():
         pairspath = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageUnzip')
         pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate')
         self.run_alignmentlist(pairspath, pairsdate)
-        # else:
-        #     datelist = list(imagelist.ImageDate.sort_values().astype(int))
-        #     self.datemaster = str(datelist[min(range(len(datelist)), key = lambda i: abs(datelist[i]-(datelist[-1]+datelist[0])/2))])
-        #     masterdf = imagelist[imagelist['ImageDate'].str.contains(self.datemaster)]
-        #     slavedf = imagelist.copy()
-        #     slavedf = slavedf.drop(slavedf[imagelist['ImageDate'].str.contains(self.datemaster)].index)
-        #     pairspath = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageUnzip')
-        #     pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate')
-        #     self.run_alignmentlist(pairspath, pairsdate)
-        # self.processdf.to_csv(os.path.join(self.diroutorder, 'process.csv'), sep=';', index=False)
-        
+
     def generate_baselinelist (self):
         self.baselinelist = self.processdf.copy()
         self.baselinelist['Master'] = self.datemaster
@@ -253,7 +248,23 @@ class model():
                 if self.processdf['Image_date'][i] == self.baselinefiltered['Slave'][j] and self.baselinefiltered['Master'][j] == self.datemaster:
                     self.baselinefiltered.loc[j, 'Outputfiles'] = self.processdf['Outputfiles'][i]
 
-            
+    def applyMultilook(dimfile, HashMap):
+        print('applying mulilook')
+        subdirout = '02_ml'
+        if os.path.isfile(dimfile):
+            print('file already exists')
+        else:
+            azLooks = 3
+            rgLooks = 3
+            parameters = HashMap()
+            multiFile = input_dir + "/multi_" + timestamp
+            parameters.put('grSquarePixel', True)
+            parameters.put('nRgLooks', rgLooks)
+            parameters.put('nAzLooks', azLooks)
+            parameters.put('outputIntensity', False)
+            multi_param = snappy.GPF.createProduct("Multilook", parameters, ProductIO.readProduct(input_dir + "/calib_" + timestamp + ".dim"))
+            ProductIO.writeProduct(multi_param, multiFile, 'BEAM-DIMAP')
+
 
         # output_sufix = '_Aligned'
         # subdirout = '01_slc'

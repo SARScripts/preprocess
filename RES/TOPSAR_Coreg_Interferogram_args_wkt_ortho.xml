@@ -5,6 +5,7 @@
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <file>$input1</file>
+      <formatName>SENTINEL-1</formatName>
     </parameters>
   </node>
   <node id="Read(2)">
@@ -69,21 +70,21 @@
       <sourceProduct.1 refid="Apply-Orbit-File(2)"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <demName>SRTM 3Sec</demName>
+      <demName>SRTM 1Sec HGT</demName>
       <demResamplingMethod>BILINEAR_INTERPOLATION</demResamplingMethod>
       <externalDEMFile/>
       <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
       <resamplingType>BILINEAR_INTERPOLATION</resamplingType>
-      <maskOutAreaWithoutElevation>false</maskOutAreaWithoutElevation>
+      <maskOutAreaWithoutElevation>true</maskOutAreaWithoutElevation>
       <outputRangeAzimuthOffset>false</outputRangeAzimuthOffset>
-      <outputDerampDemodPhase>true</outputDerampDemodPhase>
+      <outputDerampDemodPhase>false</outputDerampDemodPhase>
       <disableReramp>false</disableReramp>
     </parameters>
   </node>
   <node id="Interferogram">
     <operator>Interferogram</operator>
     <sources>
-      <sourceProduct refid="Enhanced-Spectral-Diversity"/>
+      <sourceProduct refid="Back-Geocoding"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <subtractFlatEarthPhase>true</subtractFlatEarthPhase>
@@ -91,17 +92,17 @@
       <srpNumberPoints>501</srpNumberPoints>
       <orbitDegree>3</orbitDegree>
       <includeCoherence>true</includeCoherence>
-      <cohWinAz>2</cohWinAz>
+      <cohWinAz>3</cohWinAz>
       <cohWinRg>10</cohWinRg>
       <squarePixel>true</squarePixel>
       <subtractTopographicPhase>true</subtractTopographicPhase>
-      <demName>SRTM 3Sec</demName>
+      <demName>SRTM 1Sec HGT</demName>
       <externalDEMFile/>
       <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
       <externalDEMApplyEGM/>
       <tileExtensionPercent>100</tileExtensionPercent>
       <outputElevation>true</outputElevation>
-      <outputLatLon>false</outputLatLon>
+      <outputLatLon>true</outputLatLon>
     </parameters>
   </node>
   <node id="TOPSAR-Deburst">
@@ -111,26 +112,6 @@
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <selectedPolarisations/>
-    </parameters>
-  </node>
-  <node id="Enhanced-Spectral-Diversity">
-    <operator>Enhanced-Spectral-Diversity</operator>
-    <sources>
-      <sourceProduct refid="Back-Geocoding"/>
-    </sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <fineWinWidthStr>512</fineWinWidthStr>
-      <fineWinHeightStr>512</fineWinHeightStr>
-      <fineWinAccAzimuth>16</fineWinAccAzimuth>
-      <fineWinAccRange>16</fineWinAccRange>
-      <fineWinOversampling>128</fineWinOversampling>
-      <xCorrThreshold>0.1</xCorrThreshold>
-      <cohThreshold>0.15</cohThreshold>
-      <numBlocksPerOverlap>10</numBlocksPerOverlap>
-      <useSuppliedRangeShift>false</useSuppliedRangeShift>
-      <overallRangeShift>0.0</overallRangeShift>
-      <useSuppliedAzimuthShift>false</useSuppliedAzimuthShift>
-      <overallAzimuthShift>0.0</overallAzimuthShift>
     </parameters>
   </node>
   <node id="Write">
@@ -167,13 +148,10 @@
       <displayPosition x="116.0" y="123.0"/>
     </node>
     <node id="Interferogram">
-      <displayPosition x="256.0" y="27.0"/>
+      <displayPosition x="233.0" y="123.0"/>
     </node>
     <node id="TOPSAR-Deburst">
-      <displayPosition x="394.0" y="281.0"/>
-    </node>
-    <node id="Enhanced-Spectral-Diversity">
-      <displayPosition x="180.0" y="204.0"/>
+      <displayPosition x="339.0" y="124.0"/>
     </node>
     <node id="Write">
       <displayPosition x="466.0" y="123.0"/>

@@ -36,6 +36,10 @@ if __name__ == "__main__":
             if "GPTBIN_PATH" in line:
                 pathgpt = controlslash(line.split('=')[1].strip())
                 print ("GPTBIN_PATH:" + pathgpt)
+            if "SNAPPY_FOLDER" in line:
+                snappypath = controlslash(line.split('=')[1].strip())
+                print ("SNAPPY_FOLDER:" + snappypath)
+
                 #ASSESS WHETHER CACHE AND CPU ARE VARIABLES TO TAKE INTO ACCOUNT
             # if "CACHE" in line:
             #     CACHE = line.split('=')[1].strip()
@@ -67,6 +71,7 @@ if __name__ == "__main__":
                             orders.Parameter_list.values[i].split(',')[3].replace(' ', ''), 
                             orders.Parameter_list.values[i].split(',')[4].split(), 
                             pathgpt,
+                            snappypath,
                             DirProj)
             #Parameters check
             if (not os.path.isfile(orders.Parameter_list.values[0].split(',')[0])):

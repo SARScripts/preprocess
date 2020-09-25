@@ -4,14 +4,14 @@
     <operator>Read</operator>
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>$input1</file>
+      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT/00_datafiles/S1A_IW_SLC__1SDV_20200514T060120_20200514T060147_032557_03C550_41D0.SAFE/manifest.safe</file>
     </parameters>
   </node>
   <node id="Read(2)">
     <operator>Read</operator>
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>$input2</file>
+      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT/00_datafiles/S1A_IW_SLC__1SDV_20200514T060120_20200514T060147_032557_03C550_41D0.SAFE/manifest.safe</file>
     </parameters>
   </node>
   <node id="TOPSAR-Split">
@@ -20,11 +20,11 @@
       <sourceProduct refid="Read"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <subswath>$input3</subswath>
+      <subswath>IW1</subswath>
       <selectedPolarisations/>
       <firstBurstIndex>1</firstBurstIndex>
-      <lastBurstIndex>9999</lastBurstIndex>
-      <wktAoi>$input4</wktAoi>
+      <lastBurstIndex>9</lastBurstIndex>
+      <wktAoi/>
     </parameters>
   </node>
   <node id="TOPSAR-Split(2)">
@@ -33,11 +33,11 @@
       <sourceProduct refid="Read(2)"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <subswath>$input3</subswath>
+      <subswath>IW1</subswath>
       <selectedPolarisations/>
       <firstBurstIndex>1</firstBurstIndex>
-      <lastBurstIndex>9999</lastBurstIndex>
-      <wktAoi>$input4</wktAoi>
+      <lastBurstIndex>9</lastBurstIndex>
+      <wktAoi/>
     </parameters>
   </node>
   <node id="Apply-Orbit-File">
@@ -91,7 +91,7 @@
       <srpNumberPoints>501</srpNumberPoints>
       <orbitDegree>3</orbitDegree>
       <includeCoherence>true</includeCoherence>
-      <cohWinAz>2</cohWinAz>
+      <cohWinAz>3</cohWinAz>
       <cohWinRg>10</cohWinRg>
       <squarePixel>true</squarePixel>
       <subtractTopographicPhase>true</subtractTopographicPhase>
@@ -101,7 +101,7 @@
       <externalDEMApplyEGM/>
       <tileExtensionPercent>100</tileExtensionPercent>
       <outputElevation>true</outputElevation>
-      <outputLatLon>false</outputLatLon>
+      <outputLatLon>true</outputLatLon>
     </parameters>
   </node>
   <node id="TOPSAR-Deburst">
@@ -139,7 +139,7 @@
       <sourceProduct refid="TOPSAR-Deburst"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>$target1</file>
+      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT/01_slc/S1A_IW_SLC__1SDV_20200514T060120_20200514T060147_032557_03C550_41D0_Orb_Stack_Ifg_Deb.dim</file>
       <formatName>BEAM-DIMAP</formatName>
     </parameters>
   </node>
