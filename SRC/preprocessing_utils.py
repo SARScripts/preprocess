@@ -58,7 +58,7 @@ class model():
             
         sys.path.append(self.snappypath)
         import snappy
-        from snappy import ProductIO
+        from snappy import ProductIO, GPF, HashMap
 
     def searchMetabytag(self, metafilepath, tag):
         meta = []
@@ -148,12 +148,12 @@ class model():
                 #OVERWRITE CONDITION FOR MERGE
                 if not os.path.isfile(output1 + '.dim') or self.overwrite == '1':
                     m = self.TOPS_Merge_subswaths(subswath_list, output1, self.pathgpt)
-                    for filePath in subswath_list:
-                        try:
-                            os.remove(filePath)
-                            shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
-                        except:
-                            print("Error while deleting file : ", filePath)
+                for filePath in subswath_list:
+                    try:
+                        os.remove(filePath)
+                        shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
+                    except:
+                        print("Error while deleting file : ", filePath)
             else:
                 #Change output name from IWx to 'merged' in case AOI touches only one subswath
                 shutil.move(subswath_list[0], output1+'.dim')
@@ -248,73 +248,28 @@ class model():
                 if self.processdf['Image_date'][i] == self.baselinefiltered['Slave'][j] and self.baselinefiltered['Master'][j] == self.datemaster:
                     self.baselinefiltered.loc[j, 'Outputfiles'] = self.processdf['Outputfiles'][i]
 
-    def applyMultilook(dimfile, HashMap):
-        print('applying mulilook')
-        subdirout = '02_ml'
-        if os.path.isfile(dimfile):
-            print('file already exists')
+    def applyMultilook(self, inputfile, outputfile, azLooks, rgLooks):
+        HashMap = snappy.jpy.get_type('java.util.HashMap')
+        #Get snappy Operators
+        GPF.getDefaultInstance().getOperatorSpiRegistry().loadOperatorSpis() 
+        #print('applying multilook to ' + inputfile)
+        if not os.path.isfile(inputfile):
+            print('Input file does not exist')
+            sys.exit()
         else:
-            azLooks = 3
-            rgLooks = 3
             parameters = HashMap()
-            multiFile = input_dir + "/multi_" + timestamp
             parameters.put('grSquarePixel', True)
             parameters.put('nRgLooks', rgLooks)
             parameters.put('nAzLooks', azLooks)
             parameters.put('outputIntensity', False)
-            multi_param = snappy.GPF.createProduct("Multilook", parameters, ProductIO.readProduct(input_dir + "/calib_" + timestamp + ".dim"))
-            ProductIO.writeProduct(multi_param, multiFile, 'BEAM-DIMAP')
-
-
-        # output_sufix = '_Aligned'
-        # subdirout = '01_slc'
-        # extent = self.AOI
-        # # (lonmin, latmax, lonmax, latmin)
-        # lonmin = extent[0]
-        # latmax = extent[1]
-        # lonmax = extent[2]
-        # latmin = extent[3]
-        # outputfiles = []
-        # outputtimes = []
-        # datelist = []
-        # for i in range(len(pairspath)):
-        #     time1 = datetime.now()
-        #     input1 = pairspath[i][0]
-        #     input2 = pairspath[i][1]
-        #     if '_IW_SLC_' in input1:
-        #         input3 = ['IW1', 'IW2', 'IW3']
-        #     if any (self.AOI):
-        #         input4 = 'POLYGON (('+lonmin+' '+latmin+', '+lonmax+' '+latmin+', '+lonmax+' '+latmax+', '+lonmin+' '+latmax+', '+lonmin+' '+latmin+'))'
-        #     else:
-        #         input4 = ''
-        #     #The process is executed for every subswath
-        #     for k in range(len(input3)):
-        #         #Check file type input for assign filename output (valid formats: .safe, .zip)
-        #         if os.path.splitext(input2)[1] == '.safe':
-        #             slavename = pairsdate[i][1] + '_SLC'
-        #         else:
-        #             print('Image format not supported: ' + input2)
-        #             sys.exit()
-        #         output1 = os.path.join(self.diroutorder, subdirout, slavename + output_sufix + '_' + input3[k])
-        #         try:
-        #             p = subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4,'-Ptarget1='+output1])
-        #         except:
-        #             p = ''
-        #     #After processing subswaths, they are put together with TOPS Merge Workflow
-        #     #List of subswaths by checking the output files
-        #     subswath_list = sorted(glob.glob(os.path.join(self.diroutorder, subdirout, slavename + output_sufix + '*.dim')))
-        #     #Function TOPS Merge is only called when more than 1 subswath is generated. Only IW products supported (max. 3 subswaths)
-        #     if (len(subswath_list)>1):
-        #         output_Merge = os.path.join(self.diroutorder, subdirout, slavename + output_sufix + '_MrgIW')
-        #         m = self.TOPS_Merge_subswaths(subswath_list, output_Merge, self.pathgpt)
-        #     if os.path.isfile(output_Merge+'.dim'):
-        #         outputfiles.append(output_Merge+'.dim')
-        #     else:
-        #         outputfiles.append('Not generated')
-        #     outputtimes.append((datetime.now()-time1).seconds/60)
-        #     datelist.append(pairsdate[i][1])
-        #     #TO-DO REMOVE TEMP FILES? (IW1, IW2...)
-        # #Fill processing info in df
-        # self.processdf['Image_date'] = datelist
-        # self.processdf['Outputfiles'] = outputfiles
-        # self.processdf['Processing_minutes'] = outputtimes
+            multi_param = snappy.GPF.createProduct("Multilook", parameters, ProductIO.readProduct(inputfile))
+            ProductIO.writeProduct(multi_param, outputfile, 'BEAM-DIMAP')
+            
+    def Multilook(self):
+        subdirout = '02_ml'
+        output_sufix = '_ML_' + self.azLooks + '_' + self.rgLooks
+        for i in range(len(self.processdf['Outputfiles'])):
+            inputfile = self.processdf['Outputfiles'][i]
+            outputfile = os.path.splitext(inputfile)[0] + output_sufix + '.dim'
+            self.applyMultilook(inputfile, outputfile, self.azLooks, self.rgLooks)
+            
