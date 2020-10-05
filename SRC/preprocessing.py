@@ -100,10 +100,14 @@ if __name__ == "__main__":
         if orders.Process_type[i] == 'Multilook':
             if Process.processdf is not None:
                 #Check input files exist
-                for im in Process.processdf['Outputfiles']:
-                    if not os.path.isfile(im):
-                        sys.exit('Outputs from coregistration processing not found (' + im + ')')
+                # for im in Process.processdf['Outputfiles']:
+                #     if not os.path.isfile(im):
+                #         sys.exit('Outputs from coregistration processing not found (' + im + ')')
                 Process.azLooks = str(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
                 Process.rgLooks = str(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
                 Process.Multilook()
+        
+        if orders.Process_type[i] == 'Geocoding':
+            if Process.processdf is not None:
+                Process.Geocoding()
     

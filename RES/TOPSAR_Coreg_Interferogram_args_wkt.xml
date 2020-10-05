@@ -70,7 +70,7 @@
       <sourceProduct.1 refid="Apply-Orbit-File(2)"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <demName>SRTM 1Sec HGT</demName>
+      <demName>SRTM 3Sec</demName>
       <demResamplingMethod>BILINEAR_INTERPOLATION</demResamplingMethod>
       <externalDEMFile/>
       <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
@@ -96,7 +96,7 @@
       <cohWinRg>10</cohWinRg>
       <squarePixel>true</squarePixel>
       <subtractTopographicPhase>true</subtractTopographicPhase>
-      <demName>SRTM 1Sec HGT</demName>
+      <demName>SRTM 3Sec</demName>
       <externalDEMFile/>
       <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
       <externalDEMApplyEGM/>

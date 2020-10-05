@@ -56,9 +56,9 @@ class model():
         if not os.path.exists(self.diroutorder):
             os.makedirs(self.diroutorder)
             
-        sys.path.append(self.snappypath)
-        import snappy
-        from snappy import ProductIO, GPF, HashMap
+        # sys.path.append(self.snappypath)
+        # import snappy
+        # from snappy import ProductIO, GPF, HashMap
 
     def searchMetabytag(self, metafilepath, tag):
         meta = []
@@ -101,7 +101,7 @@ class model():
         return imagelist
 
     def run_alignmentlist(self, pairspath, pairsdate):
-        gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_args_wkt.xml')
+        gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_args_wkt.xml')
         
         #CHANGE OUTPUT SUFIX
         output_sufix = '_Aligned'
@@ -155,7 +155,7 @@ class model():
                     except:
                         print("Error while deleting file : ", filePath)
             else:
-                #Change output name from IWx to 'merged' in case AOI touches only one subswath
+                #Change output name from IWx to 'merged' in case AOI covers only one subswath
                 shutil.move(subswath_list[0], output1+'.dim')
                 shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', output1+'.data')
             if os.path.isfile(output1+'.dim'):
@@ -249,6 +249,9 @@ class model():
                     self.baselinefiltered.loc[j, 'Outputfiles'] = self.processdf['Outputfiles'][i]
 
     def applyMultilook(self, inputfile, outputfile, azLooks, rgLooks):
+        sys.path.append(self.snappypath)
+        import snappy
+        from snappy import ProductIO, GPF, HashMap
         HashMap = snappy.jpy.get_type('java.util.HashMap')
         #Get snappy Operators
         GPF.getDefaultInstance().getOperatorSpiRegistry().loadOperatorSpis() 
@@ -269,7 +272,73 @@ class model():
         subdirout = '02_ml'
         output_sufix = '_ML_' + self.azLooks + '_' + self.rgLooks
         for i in range(len(self.processdf['Outputfiles'])):
-            inputfile = self.processdf['Outputfiles'][i]
-            outputfile = os.path.splitext(inputfile)[0] + output_sufix + '.dim'
-            self.applyMultilook(inputfile, outputfile, self.azLooks, self.rgLooks)
+            if os.path.isfile(self.processdf['Outputfiles'][i]):
+                inputfile = self.processdf['Outputfiles'][i]
+                outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
+                self.applyMultilook(inputfile, outputfile, self.azLooks, self.rgLooks)
             
+#     def Geocoding(self):
+#         subdirout = '03_gc'
+#         output_sufix = '_GC_' + self.azLooks + '_' + self.rgLooks
+#         for i in range(len(self.processdf['Outputfiles'])):
+#             if os.path.isfile(self.processdf['Outputfiles'][i]):
+#                 inputfile = self.processdf['Outputfiles'][i]
+#                 outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
+#                 self.applyGeocoding(inputfile, outputfile, self.azLooks, self.rgLooks)
+            
+            
+            
+#             indir='/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_SNAP/S1A_IW_SLC__1SDV_20200502T060119_20200502T060146_032382_03BFB9_57CF_Orb_Stack_Ifg_Deb.dim'
+# prod = ProductIO.readProduct(indir)
+# list(prod.getTiePointGridNames())
+# lat = prod.getTiePointGrid('latitude')
+# lon = prod.getTiePointGrid('longitude')
+ 
+# lat_data = lat.getGridData()
+# #latnode=prod.getRasterDataNode('latitude')
+
+# w = prod.getSceneRasterWidth()
+# h = prod.getSceneRasterHeight()
+# array = np.zeros((w, h), dtype=np.float32)
+
+# array.shape
+# latpixels = lat.readPixels(0, 0, w, h, array)
+# lat_arr = np.asarray(latpixels)
+# lat_arr.shape = (h, w)
+
+# lonpixels = lon.readPixels(0, 0, w, h, array)
+# lon_arr = np.asarray(lonpixels)
+# lon_arr.shape = (h, w)
+
+# #Read data from product
+# band_names = prod.getBandNames()
+# list(band_names)
+# data_getband = prod.getBand('i_ifg_IW1_VV_02May2020_14May2020')
+# data_pixels = data_getband.readPixels(0, 0, w, h, array)
+# data_pixels.shape = h, w
+
+# #Subset for testing
+# lat_sub = lat_arr[4900:5000, 4900:5000]
+# lon_sub = lon_arr[4900:5000, 4900:5000]
+# data_sub = data_pixels[4900:5000, 4900:5000]
+
+
+# lat_sub_flatten = lat_sub.flatten()
+# lon_sub_flatten = lon_sub.flatten()
+# data_sub_flatten = data_sub.flatten()
+
+
+
+
+# #Define reference grid
+# x = np.linspace(np.min(lon_sub_flatten), np.max(lon_sub_flatten),100)
+# y = np.linspace(np.min(lat_sub_flatten), np.max(lat_sub_flatten),100)
+# grid_x, grid_y = np.meshgrid(x,y)
+
+# from scipy.interpolate import griddata
+# #grid_z0 = griddata(points, values, (grid_x, grid_y), method='nearest')
+
+
+# grid_z0 = griddata((lon_sub_flatten, lat_sub_flatten), data_sub_flatten, (grid_x, grid_y), method='nearest')
+# grid_z1 = griddata((lon_sub_flatten, lat_sub_flatten), data_sub_flatten, (grid_x, grid_y), method='linear')
+# grid_z2 = griddata((lon_sub_flatten, lat_sub_flatten), data_sub_flatten, (grid_x, grid_y), method='cubic')

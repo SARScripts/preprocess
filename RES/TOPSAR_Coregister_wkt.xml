@@ -4,14 +4,14 @@
     <operator>Read</operator>
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT/01_slc/20200502_SLC_Aligned_MrgIW.dim</file>
+      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/WP2000/GPT_command_line/GPT_classic/DOWNLOADS_S1_SLC/S1A_IW_SLC__1SDV_20200303T060118_20200303T060145_031507_03A103_E436.SAFE/manifest.safe</file>
     </parameters>
   </node>
   <node id="Read(2)">
     <operator>Read</operator>
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT/01_slc/20200502_SLC_Aligned_MrgIW.dim</file>
+      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/WP2000/GPT_command_line/GPT_classic/DOWNLOADS_S1_SLC/S1A_IW_SLC__1SDV_20200514T060120_20200514T060147_032557_03C550_41D0.zip</file>
     </parameters>
   </node>
   <node id="TOPSAR-Split">
