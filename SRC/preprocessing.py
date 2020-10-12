@@ -77,7 +77,6 @@ if __name__ == "__main__":
             if (not os.path.isfile(orders.Parameter_list.values[0].split(',')[0])):
                 sys.exit('Introduce a file with a list of image paths')
             Process.alignment_ifg ()
-    
         if orders.Process_type[i] == 'generate_list':
             if Process.processdf is not None:
             #if Process.imagelistfile == orders.Parameter_list.values[0].split(',')[0]:

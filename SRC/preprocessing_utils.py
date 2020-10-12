@@ -16,6 +16,9 @@ import glob
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 import shutil
+import numpy as np
+from scipy.interpolate import griddata
+import gdal
 
 def listar (a): #Genera una lista de un string separado por comas leído de un config file
     if pd.isnull(a):
@@ -52,13 +55,14 @@ class model():
         self.maxbaseperp = ''
         self.maxbasetemp = ''
         self.baselinefiltered = pd.DataFrame()
+        self.logfilename = 'process_log.csv'
         
         if not os.path.exists(self.diroutorder):
             os.makedirs(self.diroutorder)
             
-        # sys.path.append(self.snappypath)
-        # import snappy
-        # from snappy import ProductIO, GPF, HashMap
+        sys.path.append(self.snappypath)
+        import snappy
+        from snappy import ProductIO, GPF, HashMap
 
     def searchMetabytag(self, metafilepath, tag):
         meta = []
@@ -101,7 +105,7 @@ class model():
         return imagelist
 
     def run_alignmentlist(self, pairspath, pairsdate):
-        gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_args_wkt.xml')
+        gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_Polariz_args_wkt.xml')
         
         #CHANGE OUTPUT SUFIX
         output_sufix = '_Aligned'
@@ -121,43 +125,46 @@ class model():
             input2 = pairspath[i][1]
             if '_IW_SLC_' in input1:
                 input3 = ['IW1', 'IW2', 'IW3']
+            if '_1SDV_' in input1:
+                input5 = ['VV', 'VH']
             if any (self.AOI):
                 input4 = 'POLYGON (('+lonmin+' '+latmin+', '+lonmax+' '+latmin+', '+lonmax+' '+latmax+', '+lonmin+' '+latmax+', '+lonmin+' '+latmin+'))'
             else:
                 input4 = ''
             #The process is executed for every subswath
-            for k in range(len(input3)):
+            for polariz in input5:
                 if os.path.splitext(input2)[1] == '.safe':
                     slavename = pairsdate[i][1] + '_SLC'
                 else:
                     print('Image format not supported: ' + input2)
                     sys.exit()
-                output1 = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix)
-                outputfile = os.path.join(output1 + '_' + input3[k] + '.dim')
-                #OVERWRITE CONDITION FOR SUBSWATH GENERATION
-                if (not os.path.isfile(output1+'.dim')) or self.overwrite == '1':
-                    try:
-                        p = subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4,'-Ptarget1='+outputfile])
-                    except:
-                        p = ''
-            #After processing subswaths, they are put together with TOPS Merge Workflow
-            #List of subswaths by checking the output files
-            subswath_list = sorted(glob.glob(os.path.join(output1 + '*.dim')))
-            #Function TOPS Merge is only called when more than 1 subswath is generated. Only IW products supported (max. 3 subswaths)
-            if len(subswath_list)>1:
-                #OVERWRITE CONDITION FOR MERGE
-                if not os.path.isfile(output1 + '.dim') or self.overwrite == '1':
-                    m = self.TOPS_Merge_subswaths(subswath_list, output1, self.pathgpt)
-                for filePath in subswath_list:
-                    try:
-                        os.remove(filePath)
-                        shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
-                    except:
-                        print("Error while deleting file : ", filePath)
-            else:
-                #Change output name from IWx to 'merged' in case AOI covers only one subswath
-                shutil.move(subswath_list[0], output1+'.dim')
-                shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', output1+'.data')
+                output1 = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix + '_' + polariz)
+                for k in range(len(input3)):
+                    outputfile = os.path.join(output1 + '_' + input3[k] + '.dim')
+                    #OVERWRITE CONDITION FOR SUBSWATH GENERATION
+                    if not os.path.isfile(outputfile) or self.overwrite == '1':
+                        try:
+                            p = subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4, '-Pinput5='+polariz,'-Ptarget1='+outputfile])
+                        except:
+                            p = ''
+                #After processing subswaths, they are put together with TOPS Merge Workflow
+                #List of subswaths by checking the output files
+                subswath_list = sorted(glob.glob(os.path.join(output1 + '*.dim')))
+                #Function TOPS Merge is only called when more than 1 subswath is generated. Only IW products supported (max. 3 subswaths)
+                if len(subswath_list)>1:
+                    #OVERWRITE CONDITION FOR MERGE
+                    if not os.path.isfile(output1 + '.dim') or self.overwrite == '1':
+                        m = self.TOPS_Merge_subswaths(subswath_list, output1 + '.dim', self.pathgpt)
+                    for filePath in subswath_list:
+                        try:
+                            os.remove(filePath)
+                            shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
+                        except:
+                            print("Error while deleting file : ", filePath)
+                else:
+                    #Change output name from IWx to 'merged' in case AOI covers only one subswath
+                    shutil.move(subswath_list[0], output1+'.dim')
+                    shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', output1+'.data')
             if os.path.isfile(output1+'.dim'):
                 outputfiles.append(output1+'.dim')
             else:
@@ -166,8 +173,10 @@ class model():
             datelist.append(pairsdate[i][1])
         #Fill processing info in df
         self.processdf['Image_date'] = datelist
-        self.processdf['Outputfiles'] = outputfiles
+        self.processdf['Outputfiles_align'] = outputfiles
         self.processdf['Processing_minutes'] = outputtimes
+        self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
+
         
     def TOPS_Merge_subswaths (self, imagepathlist, outputfile, pathgpt):
         if(len(imagepathlist)==2):
@@ -255,11 +264,11 @@ class model():
         HashMap = snappy.jpy.get_type('java.util.HashMap')
         #Get snappy Operators
         GPF.getDefaultInstance().getOperatorSpiRegistry().loadOperatorSpis() 
-        #print('applying multilook to ' + inputfile)
         if not os.path.isfile(inputfile):
-            print('Input file does not exist')
+            print('Input file ' + inputfile + ' does not exist')
             sys.exit()
         else:
+            time1 = datetime.now()
             parameters = HashMap()
             parameters.put('grSquarePixel', True)
             parameters.put('nRgLooks', rgLooks)
@@ -267,26 +276,102 @@ class model():
             parameters.put('outputIntensity', False)
             multi_param = snappy.GPF.createProduct("Multilook", parameters, ProductIO.readProduct(inputfile))
             ProductIO.writeProduct(multi_param, outputfile, 'BEAM-DIMAP')
+            return((datetime.now()-time1).seconds/60)
             
     def Multilook(self):
+        if (self.processdf).empty:
+            self.processdf = pd.read_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', decimal=',')
         subdirout = '02_ml'
         output_sufix = '_ML_' + self.azLooks + '_' + self.rgLooks
+        outputfiles = []
+        outputtimes = []
         for i in range(len(self.processdf['Outputfiles'])):
             if os.path.isfile(self.processdf['Outputfiles'][i]):
                 inputfile = self.processdf['Outputfiles'][i]
                 outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
-                self.applyMultilook(inputfile, outputfile, self.azLooks, self.rgLooks)
-            
+            outputtimes.append(self.applyMultilook(inputfile, outputfile, self.azLooks, self.rgLooks))
+            outputfiles.append(outputfile)
+        self.processdf['Outputfiles_ML'] = outputfiles
+        self.processdf['Processing_minutes_ML'] = outputtimes
+        self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
+
+
+
+#     def applyGeocoding(self, inputfile, outputfile):
+#         inputfile = '/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_noESD_3secSRTM_clean/02_ml/20200327_20200303_SLC_Aligned_ML_4_19.dim'
+#         prod = ProductIO.readProduct(inputfile)
+#         lat = prod.getTiePointGrid('latitude')
+#         lon = prod.getTiePointGrid('longitude')
+#         w = prod.getSceneRasterWidth()
+#         h = prod.getSceneRasterHeight()
+#         array = np.zeros((w, h), dtype=np.float32)
+#         latpixels = lat.readPixels(0, 0, w, h, array)
+#         lat_arr = np.asarray(latpixels)
+#         #lat_arr.shape = (h, w)
+#         lonpixels = lon.readPixels(0, 0, w, h, array)
+#         lon_arr = np.asarray(lonpixels)
+#         #lon_arr.shape = (h, w)
+#         band_names = prod.getBandNames()
+#         list(band_names)
+#         data_getband = prod.getBand('i_ifg_VV_27Mar2020_03Mar2020')
+#         data_pixels = data_getband.readPixels(0, 0, w, h, array)
+#         data_arr = np.asarray(data_pixels)
+#         #Define reference grid
+#         x = np.linspace(np.min(lon_arr), np.max(lon_arr), w)
+#         y = np.linspace(np.min(lat_arr), np.max(lat_arr), h)
+#         grid_x, grid_y = np.meshgrid(x,y)
+        
+#         grid_data = griddata((lon_arr, lat_arr), data_arr.flatten(), (grid_x, grid_y), method='nearest')
+        
+#         import matplotlib.pyplot as plt
+#         plt.imshow(grid_data)
+        
+        
+#         (x,y) = data.shape
+# 	format = "GTiff"
+# 	noDataValue = -9999
+# 	driver = gdal.GetDriverByName(format)
+# 	# you can change the dataformat but be sure to be able to store negative values including -9999
+# 	dst_datatype = gdal.GDT_Float32
+
+# 	#print(data)
+
+# 	dst_ds = driver.Create(filename,y,x,1,dst_datatype)
+# 	dst_ds.GetRasterBand(1).WriteArray(data)
+# 	dst_ds.GetRasterBand(1).SetNoDataValue( noDataValue )
+# 	dst_ds.SetGeoTransform(geotransform)
+# 	dst_ds.SetProjection(geoprojection)
+        
+        
+        
+        
+        
+        
+        
+        
 #     def Geocoding(self):
 #         subdirout = '03_gc'
-#         output_sufix = '_GC_' + self.azLooks + '_' + self.rgLooks
-#         for i in range(len(self.processdf['Outputfiles'])):
-#             if os.path.isfile(self.processdf['Outputfiles'][i]):
+#         output_sufix = '_GC'
+#         for i in range(len(self.processdf['Multilook file'])):
+#             if os.path.isfile(self.processdf['Multilook file'][i]):
 #                 inputfile = self.processdf['Outputfiles'][i]
 #                 outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
 #                 self.applyGeocoding(inputfile, outputfile, self.azLooks, self.rgLooks)
             
-            
+#     def array2raster(newRasterfn, rasterOrigin, pixelWidth, pixelHeight, array):
+#         cols = array.shape[1]
+#         rows = array.shape[0]
+#         originX = rasterOrigin[0]
+#         originY = rasterOrigin[1]
+#         driver = gdal.GetDriverByName('ENVI')
+#         outRaster = driver.Create(newRasterfn, cols, rows, 1, gdal.GDT_Byte)
+#         outRaster.SetGeoTransform((originX, pixelWidth, 0, originY, 0, pixelHeight))
+#         outband = outRaster.GetRasterBand(1)
+#         outband.WriteArray(array)
+#         outRasterSRS = osr.SpatialReference()
+#         outRasterSRS.ImportFromEPSG(4326)
+#         outRaster.SetProjection(outRasterSRS.ExportToWkt())
+#         outband.FlushCache()            
             
 #             indir='/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_SNAP/S1A_IW_SLC__1SDV_20200502T060119_20200502T060146_032382_03BFB9_57CF_Orb_Stack_Ifg_Deb.dim'
 # prod = ProductIO.readProduct(indir)
