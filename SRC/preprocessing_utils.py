@@ -166,21 +166,21 @@ class model():
                     #Change output name from IWx to 'merged' in case AOI covers only one subswath
                     shutil.move(subswath_list[0], output1+'.dim')
                     shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', output1+'.data')
-            polariz_list = sorted(glob.glob(imagebasename + '*V*.dim'))
-            if len(polariz_list)>1:
-                #Stack polarizations (dual)
-                if not os.path.isfile(imagebasename + '.dim') or self.overwrite == '1':
-                    m = self.stack_polariz(polariz_list, imagebasename + '.dim', self.pathgpt)
-                for filePath in polariz_list:
-                    try:
-                        os.remove(filePath)
-                        shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
-                    except:
-                        print("Error while deleting file : ", filePath)
-            else:
-                #Change output name from IWx to 'merged' in case AOI covers only one subswath
-                shutil.move(polariz_list[0], imagebasename+'.dim')
-                shutil.move(os.path.splitext(polariz_list[0])[0]+'.data', imagebasename+'.data')
+                polariz_list = sorted(glob.glob(imagebasename + '*V*.dim'))
+                if len(polariz_list)>1:
+                    #Stack polarizations (dual)
+                    if not os.path.isfile(imagebasename + '.dim') or self.overwrite == '1':
+                        m = self.stack_polariz(polariz_list, imagebasename + '.dim', self.pathgpt)
+                    for filePath in polariz_list:
+                        try:
+                            os.remove(filePath)
+                            shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
+                        except:
+                            print("Error while deleting file : ", filePath)
+                else:
+                    #Change output name from IWx to 'merged' in case AOI covers only one subswath
+                    shutil.move(polariz_list[0], imagebasename+'.dim')
+                    shutil.move(os.path.splitext(polariz_list[0])[0]+'.data', imagebasename+'.data')
             if os.path.isfile(imagebasename+'.dim'):
                 outputfiles.append(imagebasename+'.dim')
             else:
