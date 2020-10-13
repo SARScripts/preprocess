@@ -166,7 +166,7 @@ class model():
                     #Change output name from IWx to 'merged' in case AOI covers only one subswath
                     shutil.move(subswath_list[0], output1+'.dim')
                     shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', output1+'.data')
-            polariz_list = sorted(glob.glob(imagebasename + '*.dim'))
+            polariz_list = sorted(glob.glob(imagebasename + '*V*.dim'))
             if len(polariz_list)>1:
                 #Stack polarizations (dual)
                 if not os.path.isfile(imagebasename + '.dim') or self.overwrite == '1':
@@ -273,15 +273,14 @@ class model():
                 self.baselinefiltered = self.baselinelist.copy()
         self.baselinefiltered.to_csv(os.path.join(self.diroutorder, 'baselines.csv'), sep=';', index=False)
 
-    def generate_interferogram(self):
-        print('entra generate interf')
-        gptxml_file = os.path.join(self.DirProject, 'RES', 'Interferogram_Multilook.xml')
-        #for i in range(len(self.baselinefiltered)):
-        #Fill output files if pair is already coregistered
-        for i in range(len(self.processdf)):
-            for j in range(len(self.baselinefiltered)):
-                if self.processdf['Image_date'][i] == self.baselinefiltered['Slave'][j] and self.baselinefiltered['Master'][j] == self.datemaster:
-                    self.baselinefiltered.loc[j, 'Outputfiles_align'] = self.processdf['Outputfiles_align'][i]
+    # def generate_interferogram(self):
+    #     gptxml_file = os.path.join(self.DirProject, 'RES', 'Interferogram_Multilook.xml')
+    #     #for i in range(len(self.baselinefiltered)):
+    #     #Fill output files if pair is already coregistered
+    #     for i in range(len(self.processdf)):
+    #         for j in range(len(self.baselinefiltered)):
+    #             if self.processdf['Image_date'][i] == self.baselinefiltered['Slave'][j] and self.baselinefiltered['Master'][j] == self.datemaster:
+    #                 self.baselinefiltered.loc[j, 'Outputfiles_align'] = self.processdf['Outputfiles_align'][i]
 
     def applyMultilook(self, inputfile, outputfile, azLooks, rgLooks):
         sys.path.append(self.snappypath)
