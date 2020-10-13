@@ -138,7 +138,8 @@ class model():
                 else:
                     print('Image format not supported: ' + input2)
                     sys.exit()
-                output1 = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix + '_' + polariz)
+                imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix)
+                output1 = imagebasename + '_' + polariz
                 for k in range(len(input3)):
                     outputfile = os.path.join(output1 + '_' + input3[k] + '.dim')
                     #OVERWRITE CONDITION FOR SUBSWATH GENERATION
@@ -165,8 +166,23 @@ class model():
                     #Change output name from IWx to 'merged' in case AOI covers only one subswath
                     shutil.move(subswath_list[0], output1+'.dim')
                     shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', output1+'.data')
-            if os.path.isfile(output1+'.dim'):
-                outputfiles.append(output1+'.dim')
+            polariz_list = sorted(glob.glob(imagebasename + '*.dim'))
+            if len(polariz_list)>1:
+                #Stack polarizations (dual)
+                if not os.path.isfile(imagebasename + '.dim') or self.overwrite == '1':
+                    m = self.stack_polariz(polariz_list, imagebasename + '.dim', self.pathgpt)
+                for filePath in polariz_list:
+                    try:
+                        os.remove(filePath)
+                        shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
+                    except:
+                        print("Error while deleting file : ", filePath)
+            else:
+                #Change output name from IWx to 'merged' in case AOI covers only one subswath
+                shutil.move(polariz_list[0], imagebasename+'.dim')
+                shutil.move(os.path.splitext(polariz_list[0])[0]+'.data', imagebasename+'.data')
+            if os.path.isfile(imagebasename+'.dim'):
+                outputfiles.append(imagebasename+'.dim')
             else:
                 outputfiles.append('Not generated')
             outputtimes.append((datetime.now()-time1).seconds/60)
@@ -176,8 +192,18 @@ class model():
         self.processdf['Outputfiles_align'] = outputfiles
         self.processdf['Processing_minutes'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
-
         
+    def stack_polariz (self, imagepathlist, outputfile, pathgpt):
+        if len(imagepathlist)==2:
+            gptxml_file = os.path.join(self.DirProject, 'RES', 'stack_dualpolariz.xml')
+            input1 = imagepathlist[0]
+            input2 = imagepathlist[1]
+            try:
+                m = subprocess.check_output([pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Ptarget1='+outputfile])
+            except:
+                m = ''
+        return m
+    
     def TOPS_Merge_subswaths (self, imagepathlist, outputfile, pathgpt):
         if(len(imagepathlist)==2):
             gptxml_file = os.path.join(self.DirProject, 'RES', 'merge_2subswaths.xml')
@@ -221,9 +247,9 @@ class model():
         self.baselinelist = self.processdf.copy()
         self.baselinelist['Master'] = self.datemaster
         self.baselinelist['Slave'] = self.processdf['Image_date']
-        self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles'][i], 'Perp Baseline')[1] for i in range(len(self.processdf))]
-        self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles'][i], 'Temp Baseline')[1] for i in range(len(self.processdf))]
-        self.baselinelist = self.baselinelist.drop(['Image_date', 'Outputfiles', 'Processing_minutes'], axis=1)
+        self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles_align'][i], 'Perp Baseline')[1] for i in range(len(self.processdf))]
+        self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles_align'][i], 'Temp Baseline')[1] for i in range(len(self.processdf))]
+        self.baselinelist = self.baselinelist.drop(['Image_date', 'Outputfiles_align', 'Processing_minutes'], axis=1)
         waninglist = self.baselinelist.copy()
         while len(waninglist)>1:
             for i in range(len(waninglist)-1):
@@ -255,7 +281,7 @@ class model():
         for i in range(len(self.processdf)):
             for j in range(len(self.baselinefiltered)):
                 if self.processdf['Image_date'][i] == self.baselinefiltered['Slave'][j] and self.baselinefiltered['Master'][j] == self.datemaster:
-                    self.baselinefiltered.loc[j, 'Outputfiles'] = self.processdf['Outputfiles'][i]
+                    self.baselinefiltered.loc[j, 'Outputfiles_align'] = self.processdf['Outputfiles_align'][i]
 
     def applyMultilook(self, inputfile, outputfile, azLooks, rgLooks):
         sys.path.append(self.snappypath)
@@ -279,15 +305,15 @@ class model():
             return((datetime.now()-time1).seconds/60)
             
     def Multilook(self):
-        if (self.processdf).empty:
-            self.processdf = pd.read_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', decimal=',')
+        # if (self.processdf).empty:
+        #     self.processdf = pd.read_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', decimal=',')
         subdirout = '02_ml'
         output_sufix = '_ML_' + self.azLooks + '_' + self.rgLooks
         outputfiles = []
         outputtimes = []
-        for i in range(len(self.processdf['Outputfiles'])):
-            if os.path.isfile(self.processdf['Outputfiles'][i]):
-                inputfile = self.processdf['Outputfiles'][i]
+        for i in range(len(self.processdf['Outputfiles_align'])):
+            if os.path.isfile(self.processdf['Outputfiles_align'][i]):
+                inputfile = self.processdf['Outputfiles_align'][i]
                 outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
             outputtimes.append(self.applyMultilook(inputfile, outputfile, self.azLooks, self.rgLooks))
             outputfiles.append(outputfile)
