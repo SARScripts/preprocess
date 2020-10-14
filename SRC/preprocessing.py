@@ -81,7 +81,7 @@ if __name__ == "__main__":
             if Process.processdf is not None:
             #if Process.imagelistfile == orders.Parameter_list.values[0].split(',')[0]:
                 #Parameters check Process.processdf must exist and aligned images from list
-                for im in Process.processdf['Outputfiles']:
+                for im in Process.processdf['Outputfiles_align']:
                     if not os.path.isfile(im):
                         sys.exit('Outputs from coregistration processing not found (' + im + ')')
                 Process.maxbasetemp = float(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
