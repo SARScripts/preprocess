@@ -84,8 +84,8 @@ class model():
         for i in range(len(imagelist)):
             if os.path.splitext(imagelist.Image[i])[1] == '.zip':
                 #OVERWRITE CONDITION FOR UNZIP FILES
-                if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))) or self.overwrite == '1':
-                    unzipS1 (imagelist.Image[i], diroutput)
+                # if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))) or self.overwrite == '1':
+                #     unzipS1 (imagelist.Image[i], diroutput)
                 ImageUnzip.append(os.path.join(diroutput, os.path.splitext(os.path.basename(imagelist.Image[i]))[0]+'.SAFE', 'manifest.safe'))
                 ImageName.append(os.path.splitext(os.path.basename(imagelist.Image[i]))[0])
             elif os.path.splitext(imagelist.Image[i])[1] == '.safe':
@@ -106,7 +106,8 @@ class model():
 
     def run_alignmentlist(self, pairspath, pairsdate):
         gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_Polariz_args_wkt.xml')
-        
+        gptconvert_file = os.path.join(self.DirProject, 'RES', 'convert_DIMAP.xml')
+
         #CHANGE OUTPUT SUFIX
         output_sufix = '_Aligned'
         subdirout = '01_slc'
@@ -132,31 +133,45 @@ class model():
             else:
                 input4 = ''
             #The process is executed for every subswath
-            for polariz in input5:
-                if os.path.splitext(input2)[1] == '.safe':
-                    slavename = pairsdate[i][1] + '_SLC'
-                else:
-                    print('Image format not supported: ' + input2)
-                    sys.exit()
-                imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix)
-                output1 = imagebasename + '_' + polariz
-                for k in range(len(input3)):
-                    outputfile = os.path.join(output1 + '_' + input3[k] + '.dim')
-                    #OVERWRITE CONDITION FOR SUBSWATH GENERATION
-                    if not os.path.isfile(outputfile) or self.overwrite == '1':
+            
+            if os.path.splitext(input2)[1] == '.safe':
+                slavename = pairsdate[i][1] + '_SLC'
+            else:
+                print('Image format not supported: ' + input2)
+                sys.exit()
+            imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix)
+            if not os.path.isfile(imagebasename + '.dim') or self.overwrite == '1':
+                for polariz in input5:
+                    output1 = imagebasename + '_' + polariz
+                    for k in range(len(input3)):
+                        outputfile = os.path.join(output1 + '_' + input3[k] + '.dim')
+                        #OVERWRITE CONDITION FOR SUBSWATH GENERATION
                         try:
                             p = subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4, '-Pinput5='+polariz,'-Ptarget1='+outputfile])
                         except:
                             p = ''
-                #After processing subswaths, they are put together with TOPS Merge Workflow
-                #List of subswaths by checking the output files
-                subswath_list = sorted(glob.glob(os.path.join(output1 + '*.dim')))
-                #Function TOPS Merge is only called when more than 1 subswath is generated. Only IW products supported (max. 3 subswaths)
-                if len(subswath_list)>1:
-                    #OVERWRITE CONDITION FOR MERGE
-                    if not os.path.isfile(output1 + '.dim') or self.overwrite == '1':
+                    #After processing subswaths, they are put together with TOPS Merge Workflow
+                    #List of subswaths by checking the output files
+                    subswath_list = sorted(glob.glob(os.path.join(output1 + '*.dim')))
+                    #Function TOPS Merge is only called when more than 1 subswath is generated. Only IW products supported (max. 3 subswaths)
+                    if len(subswath_list)>1:
+                        #OVERWRITE CONDITION FOR MERGE
                         m = self.TOPS_Merge_subswaths(subswath_list, output1 + '.dim', self.pathgpt)
-                    for filePath in subswath_list:
+                        for filePath in subswath_list:
+                            try:
+                                os.remove(filePath)
+                                shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
+                            except:
+                                print("Error while deleting file : ", filePath)
+                    else:
+                        #Change output name from IWx to 'merged' in case AOI covers only one subswath
+                        shutil.move(subswath_list[0], output1+'.dim')
+                        shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', output1+'.data')
+                polariz_list = sorted(glob.glob(imagebasename + '*V*.dim'))
+                if len(polariz_list)>1:
+                    #Stack polarizations (dual)
+                    m = self.stack_polariz(polariz_list, imagebasename + '.dim', self.pathgpt)
+                    for filePath in polariz_list:
                         try:
                             os.remove(filePath)
                             shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
@@ -164,29 +179,16 @@ class model():
                             print("Error while deleting file : ", filePath)
                 else:
                     #Change output name from IWx to 'merged' in case AOI covers only one subswath
-                    shutil.move(subswath_list[0], output1+'.dim')
-                    shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', output1+'.data')
-            polariz_list = sorted(glob.glob(imagebasename + '*V*.dim'))
-            if len(polariz_list)>1:
-                #Stack polarizations (dual)
-                if not os.path.isfile(imagebasename + '.dim') or self.overwrite == '1':
-                    m = self.stack_polariz(polariz_list, imagebasename + '.dim', self.pathgpt)
-                for filePath in polariz_list:
-                    try:
-                        os.remove(filePath)
-                        shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
-                    except:
-                        print("Error while deleting file : ", filePath)
-            else:
-                #Change output name from IWx to 'merged' in case AOI covers only one subswath
-                shutil.move(polariz_list[0], imagebasename+'.dim')
-                shutil.move(os.path.splitext(polariz_list[0])[0]+'.data', imagebasename+'.data')
+                    shutil.move(polariz_list[0], imagebasename+'.dim')
+                    shutil.move(os.path.splitext(polariz_list[0])[0]+'.data', imagebasename+'.data')
             if os.path.isfile(imagebasename+'.dim'):
                 outputfiles.append(imagebasename+'.dim')
             else:
                 outputfiles.append('Not generated')
             outputtimes.append((datetime.now()-time1).seconds/60)
             datelist.append(pairsdate[i][1])
+        #Convert master image to DIMAP format for next processing
+        subprocess.check_output([pathgpt, gptconvert_file, '-Pinput1='+input1, '-Ptarget1='+os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + self.datemaster + '_SLC_' + output_sufix)+'.dim'])
         #Fill processing info in df
         self.processdf['Image_date'] = datelist
         self.processdf['Outputfiles_align'] = outputfiles
@@ -229,7 +231,7 @@ class model():
         imagelist = pd.read_csv(self.imagelistfile, sep=';', decimal=',')
         #Unzip and get initial metadata
         imagelist = self.unzipgetmeta (imagelist)
-
+        #self.processdf = imagelist
         #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, RUN ALIGNMENT PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
         #Identify master image row and set up slave images dataframe
         if not any (imagelist['ImageDate'].str.contains(self.datemaster)):
@@ -304,8 +306,6 @@ class model():
             return((datetime.now()-time1).seconds/60)
             
     def Multilook(self):
-        # if (self.processdf).empty:
-        #     self.processdf = pd.read_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', decimal=',')
         subdirout = '02_ml'
         output_sufix = '_ML_' + self.azLooks + '_' + self.rgLooks
         outputfiles = []
@@ -314,7 +314,10 @@ class model():
             if os.path.isfile(self.processdf['Outputfiles_align'][i]):
                 inputfile = self.processdf['Outputfiles_align'][i]
                 outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
-                outputtimes.append(self.applyMultilook(inputfile, outputfile, self.azLooks, self.rgLooks))
+                if not os.path.isfile(outputfile) or self.overwrite == '1':
+                    outputtimes.append(self.applyMultilook(inputfile, outputfile, self.azLooks, self.rgLooks))
+                else:
+                    outputtimes.append('0')
                 outputfiles.append(outputfile)
             else:
                 continue
@@ -376,15 +379,24 @@ class model():
         
         
         
-#     def Geocoding(self):
-#         subdirout = '03_gc'
-#         output_sufix = '_GC'
-#         for i in range(len(self.processdf['Multilook file'])):
-#             if os.path.isfile(self.processdf['Multilook file'][i]):
-#                 inputfile = self.processdf['Outputfiles'][i]
-#                 outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
-#                 self.applyGeocoding(inputfile, outputfile, self.azLooks, self.rgLooks)
-            
+    def Geocoding(self):
+        subdirout = '03_gc'
+        output_sufix = '_GC'
+        for i in range(len(self.processdf['Outputfiles_ML'])):
+            if os.path.isfile(self.processdf['Outputfiles_ML'][i]):
+                inputfile = self.processdf['Outputfiles_ML'][i]
+                outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
+                if not os.path.isfile(outputfile) or self.overwrite == '1':
+                    self.applyGeocoding(inputfile, outputfile)
+                else:
+                    outputtimes.append('0')
+                outputfiles.append(outputfile)
+            else:
+                continue
+        self.processdf['Outputfiles_GC'] = outputfiles
+        self.processdf['Processing_minutes_GC'] = outputtimes
+        self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
+
 #     def array2raster(newRasterfn, rasterOrigin, pixelWidth, pixelHeight, array):
 #         cols = array.shape[1]
 #         rows = array.shape[0]
