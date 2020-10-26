@@ -19,7 +19,9 @@ import shutil
 import numpy as np
 from scipy.interpolate import griddata
 import gdal
-
+from pyproj import Proj, transform
+#import snappy
+from snappy import ProductIO, GPF, HashMap
 def listar (a): #Genera una lista de un string separado por comas leído de un config file
     if pd.isnull(a):
         return ''
@@ -61,8 +63,7 @@ class model():
             os.makedirs(self.diroutorder)
             
         sys.path.append(self.snappypath)
-        import snappy
-        from snappy import ProductIO, GPF, HashMap
+
 
     def searchMetabytag(self, metafilepath, tag):
         meta = []
@@ -84,8 +85,8 @@ class model():
         for i in range(len(imagelist)):
             if os.path.splitext(imagelist.Image[i])[1] == '.zip':
                 #OVERWRITE CONDITION FOR UNZIP FILES
-                # if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))) or self.overwrite == '1':
-                #     unzipS1 (imagelist.Image[i], diroutput)
+                if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))) or self.overwrite == '1':
+                    unzipS1 (imagelist.Image[i], diroutput)
                 ImageUnzip.append(os.path.join(diroutput, os.path.splitext(os.path.basename(imagelist.Image[i]))[0]+'.SAFE', 'manifest.safe'))
                 ImageName.append(os.path.splitext(os.path.basename(imagelist.Image[i]))[0])
             elif os.path.splitext(imagelist.Image[i])[1] == '.safe':
@@ -107,16 +108,16 @@ class model():
     def run_alignmentlist(self, pairspath, pairsdate):
         gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_Polariz_args_wkt.xml')
         gptconvert_file = os.path.join(self.DirProject, 'RES', 'convert_DIMAP.xml')
+        gptsubset_master = os.path.join(self.DirProject, 'RES', 'applyAOI_master_convertDIMAP.xml')
 
         #CHANGE OUTPUT SUFIX
         output_sufix = '_Aligned'
         subdirout = '01_slc'
-        extent = self.AOI
         # (lonmin, latmax, lonmax, latmin)
-        lonmin = extent[0]
-        latmax = extent[1]
-        lonmax = extent[2]
-        latmin = extent[3]
+        lonmin = self.AOI[0]
+        latmax = self.AOI[1]
+        lonmax = self.AOI[2]
+        latmin = self.AOI[3]
         outputfiles = []
         outputtimes = []
         datelist = []
@@ -187,8 +188,37 @@ class model():
                 outputfiles.append('Not generated')
             outputtimes.append((datetime.now()-time1).seconds/60)
             datelist.append(pairsdate[i][1])
-        #Convert master image to DIMAP format for next processing
-        subprocess.check_output([pathgpt, gptconvert_file, '-Pinput1='+input1, '-Ptarget1='+os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + self.datemaster + '_SLC_' + output_sufix)+'.dim'])
+        #Subset master image by AOI and convert to DIMAP format for next processing, fill processing table.
+        imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + self.datemaster + '_SLC' + output_sufix)
+        if not os.path.isfile(imagebasename+'.dim'):
+            time1 = datetime.now()
+            for k in range(len(input3)):
+                outputtemp = os.path.join(imagebasename + '_' + input3[k] + '.dim')
+                #OVERWRITE CONDITION FOR SUBSWATH GENERATION
+                try:
+                    p = subprocess.check_output([self.pathgpt, gptsubset_master, '-Pinput1='+input1, '-Pinput2='+input3[k], '-Pinput3='+input4, '-Ptarget1='+outputtemp])
+                except:
+                    p = ''
+            #After processing subswaths, they are put together with TOPS Merge Workflow
+            subswath_list = sorted(glob.glob(os.path.join(imagebasename + '*.dim')))
+            if len(subswath_list)>1:
+                #OVERWRITE CONDITION FOR MERGE
+                m = self.TOPS_Merge_subswaths(subswath_list, imagebasename + '.dim', self.pathgpt)
+                for filePath in subswath_list:
+                    try:
+                        os.remove(filePath)
+                        shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
+                    except:
+                        print("Error while deleting file : ", filePath)
+            else:
+                #Change output name from IWx to 'merged' in case AOI covers only one subswath
+                shutil.move(subswath_list[0], imagebasename+'.dim')
+                shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', imagebasename+'.data')
+            outputtimes.append((datetime.now()-time1).seconds/60)
+        else:
+            outputtimes.append('0')
+        datelist.append(self.datemaster)
+        outputfiles.append(imagebasename + '.dim')
         #Fill processing info in df
         self.processdf['Image_date'] = datelist
         self.processdf['Outputfiles_align'] = outputfiles
@@ -325,144 +355,71 @@ class model():
         self.processdf['Processing_minutes_ML'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
 
-
-
-#     def applyGeocoding(self, inputfile, outputfile):
-#         inputfile = '/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_noESD_3secSRTM_clean/02_ml/20200327_20200303_SLC_Aligned_ML_4_19.dim'
-#         prod = ProductIO.readProduct(inputfile)
-#         lat = prod.getTiePointGrid('latitude')
-#         lon = prod.getTiePointGrid('longitude')
-#         w = prod.getSceneRasterWidth()
-#         h = prod.getSceneRasterHeight()
-#         array = np.zeros((w, h), dtype=np.float32)
-#         latpixels = lat.readPixels(0, 0, w, h, array)
-#         lat_arr = np.asarray(latpixels)
-#         #lat_arr.shape = (h, w)
-#         lonpixels = lon.readPixels(0, 0, w, h, array)
-#         lon_arr = np.asarray(lonpixels)
-#         #lon_arr.shape = (h, w)
-#         band_names = prod.getBandNames()
-#         list(band_names)
-#         data_getband = prod.getBand('i_ifg_VV_27Mar2020_03Mar2020')
-#         data_pixels = data_getband.readPixels(0, 0, w, h, array)
-#         data_arr = np.asarray(data_pixels)
-#         #Define reference grid
-#         x = np.linspace(np.min(lon_arr), np.max(lon_arr), w)
-#         y = np.linspace(np.min(lat_arr), np.max(lat_arr), h)
-#         grid_x, grid_y = np.meshgrid(x,y)
+    def applyGeocoding(self, inputfile, outputdir, epsg, taglist):
+        time1 = datetime.now()
+        prod = ProductIO.readProduct(inputfile)
+        lat = prod.getTiePointGrid('latitude')
+        lon = prod.getTiePointGrid('longitude')
+        w = prod.getSceneRasterWidth()
+        h = prod.getSceneRasterHeight()
         
-#         grid_data = griddata((lon_arr, lat_arr), data_arr.flatten(), (grid_x, grid_y), method='nearest')
+        array = np.zeros((w, h), dtype=np.float32)
+        latpixels = lat.readPixels(0, 0, w, h, array)
+        lat_arr = np.asarray(latpixels)
+        lat_arr.shape = (h, w)
+        lonpixels = lon.readPixels(0, 0, w, h, array)
+        lon_arr = np.asarray(lonpixels)
+        lon_arr.shape = (h, w)
         
-#         import matplotlib.pyplot as plt
-#         plt.imshow(grid_data)
+        if not os.path.exists(outputdir):
+            os.makedirs(outputdir)
+        np.save(os.path.join(outputdir, 'lat'), lat_arr)
+        np.save(os.path.join(outputdir, 'lon'), lon_arr)
+        #np.savetxt(os.path.join(outputdir, 'lat'), lat_arr, delimiter=';')
+        #np.savetxt(os.path.join(outputdir, 'lon'), lon_arr, delimiter=';')
         
-        
-#         (x,y) = data.shape
-# 	format = "GTiff"
-# 	noDataValue = -9999
-# 	driver = gdal.GetDriverByName(format)
-# 	# you can change the dataformat but be sure to be able to store negative values including -9999
-# 	dst_datatype = gdal.GDT_Float32
-
-# 	#print(data)
-
-# 	dst_ds = driver.Create(filename,y,x,1,dst_datatype)
-# 	dst_ds.GetRasterBand(1).WriteArray(data)
-# 	dst_ds.GetRasterBand(1).SetNoDataValue( noDataValue )
-# 	dst_ds.SetGeoTransform(geotransform)
-# 	dst_ds.SetProjection(geoprojection)
-        
-        
-        
-        
-        
-        
-        
+        inProj = Proj('epsg:4326')
+        outProj = Proj('epsg:'+epsg)
+        x, y = transform(inProj,outProj,lat_arr,lon_arr)
+        np.save(os.path.join(outputdir, 'x'), x)
+        np.save(os.path.join(outputdir, 'y'), y)
+        #Check for bands for geocoding and resampling
+        bandlist = []
+        try:
+            for tag in taglist:
+                for band in list(prod.getBandNames()):
+                    if tag in band:
+                        bandlist.append(band)
+        except:
+            print('No tags')
+        if bandlist is not None:
+            x1 = np.linspace(np.min(x), np.max(x), w)
+            y1 = np.linspace(np.min(y), np.max(y), h)
+            grid_x, grid_y = np.meshgrid(x1,y1)
+            for band in bandlist:
+                data_getband = prod.getBand(band)
+                data_pixels = data_getband.readPixels(0, 0, w, h, array)
+                data_arr = np.asarray(data_pixels)
+                grid_data = griddata((x.flatten(), y.flatten()), data_arr.flatten(), (grid_x, grid_y), method='nearest')
+                np.save(os.path.join(outputdir, band), grid_data)
+        return((datetime.now()-time1).seconds/60)
         
     def Geocoding(self):
         subdirout = '03_gc'
         output_sufix = '_GC'
+        outputfiles = []
+        outputtimes = []
         for i in range(len(self.processdf['Outputfiles_ML'])):
             if os.path.isfile(self.processdf['Outputfiles_ML'][i]):
                 inputfile = self.processdf['Outputfiles_ML'][i]
-                outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
-                if not os.path.isfile(outputfile) or self.overwrite == '1':
-                    self.applyGeocoding(inputfile, outputfile)
+                outputdir = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0])
+                if not os.path.isdir(outputdir) or self.overwrite == '1':
+                    outputtimes.append(self.applyGeocoding(inputfile, outputdir, self.epsg, self.taglist))
                 else:
                     outputtimes.append('0')
-                outputfiles.append(outputfile)
+                outputfiles.append(outputdir)
             else:
                 continue
         self.processdf['Outputfiles_GC'] = outputfiles
         self.processdf['Processing_minutes_GC'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
-
-#     def array2raster(newRasterfn, rasterOrigin, pixelWidth, pixelHeight, array):
-#         cols = array.shape[1]
-#         rows = array.shape[0]
-#         originX = rasterOrigin[0]
-#         originY = rasterOrigin[1]
-#         driver = gdal.GetDriverByName('ENVI')
-#         outRaster = driver.Create(newRasterfn, cols, rows, 1, gdal.GDT_Byte)
-#         outRaster.SetGeoTransform((originX, pixelWidth, 0, originY, 0, pixelHeight))
-#         outband = outRaster.GetRasterBand(1)
-#         outband.WriteArray(array)
-#         outRasterSRS = osr.SpatialReference()
-#         outRasterSRS.ImportFromEPSG(4326)
-#         outRaster.SetProjection(outRasterSRS.ExportToWkt())
-#         outband.FlushCache()            
-            
-#             indir='/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_SNAP/S1A_IW_SLC__1SDV_20200502T060119_20200502T060146_032382_03BFB9_57CF_Orb_Stack_Ifg_Deb.dim'
-# prod = ProductIO.readProduct(indir)
-# list(prod.getTiePointGridNames())
-# lat = prod.getTiePointGrid('latitude')
-# lon = prod.getTiePointGrid('longitude')
- 
-# lat_data = lat.getGridData()
-# #latnode=prod.getRasterDataNode('latitude')
-
-# w = prod.getSceneRasterWidth()
-# h = prod.getSceneRasterHeight()
-# array = np.zeros((w, h), dtype=np.float32)
-
-# array.shape
-# latpixels = lat.readPixels(0, 0, w, h, array)
-# lat_arr = np.asarray(latpixels)
-# lat_arr.shape = (h, w)
-
-# lonpixels = lon.readPixels(0, 0, w, h, array)
-# lon_arr = np.asarray(lonpixels)
-# lon_arr.shape = (h, w)
-
-# #Read data from product
-# band_names = prod.getBandNames()
-# list(band_names)
-# data_getband = prod.getBand('i_ifg_IW1_VV_02May2020_14May2020')
-# data_pixels = data_getband.readPixels(0, 0, w, h, array)
-# data_pixels.shape = h, w
-
-# #Subset for testing
-# lat_sub = lat_arr[4900:5000, 4900:5000]
-# lon_sub = lon_arr[4900:5000, 4900:5000]
-# data_sub = data_pixels[4900:5000, 4900:5000]
-
-
-# lat_sub_flatten = lat_sub.flatten()
-# lon_sub_flatten = lon_sub.flatten()
-# data_sub_flatten = data_sub.flatten()
-
-
-
-
-# #Define reference grid
-# x = np.linspace(np.min(lon_sub_flatten), np.max(lon_sub_flatten),100)
-# y = np.linspace(np.min(lat_sub_flatten), np.max(lat_sub_flatten),100)
-# grid_x, grid_y = np.meshgrid(x,y)
-
-# from scipy.interpolate import griddata
-# #grid_z0 = griddata(points, values, (grid_x, grid_y), method='nearest')
-
-
-# grid_z0 = griddata((lon_sub_flatten, lat_sub_flatten), data_sub_flatten, (grid_x, grid_y), method='nearest')
-# grid_z1 = griddata((lon_sub_flatten, lat_sub_flatten), data_sub_flatten, (grid_x, grid_y), method='linear')
-# grid_z2 = griddata((lon_sub_flatten, lat_sub_flatten), data_sub_flatten, (grid_x, grid_y), method='cubic')

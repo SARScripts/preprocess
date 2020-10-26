@@ -54,7 +54,7 @@ if __name__ == "__main__":
     orders = pd.read_csv(OrderFile, sep=';', decimal=',')
     
     #PARAMETERS NEEDED FOR EVERY PROCESSING
-    #'alignment_interferogram': list_of_images (essential), masterimage_date (if not specified, master date taken as the closest date to mid-point between first and last date), AOI (if not specified whole scene considered)
+    #'alignment_interferogram': list_of_images (essential), output directory (essential), overwrite=[0, 1], masterimage_date (if not specified, master date taken as the closest date to mid-point between first and last date), AOI (if not specified whole scene considered)
     #'generate_pairs_list': list_of_images (essential)
     
     #A PROCESSING OBJECT IS CREATED FOR THE WHOLE PROCESSING CHAIN
@@ -79,8 +79,6 @@ if __name__ == "__main__":
             Process.alignment_ifg ()
         if orders.Process_type[i] == 'generate_list':
             if Process.processdf is not None:
-            #if Process.imagelistfile == orders.Parameter_list.values[0].split(',')[0]:
-                #Parameters check Process.processdf must exist and aligned images from list
                 for im in Process.processdf['Outputfiles_align']:
                     if not os.path.isfile(im):
                         sys.exit('Outputs from coregistration processing not found (' + im + ')')
@@ -104,5 +102,7 @@ if __name__ == "__main__":
         
         if orders.Process_type[i] == 'Geocoding':
             if Process.processdf is not None:
+                Process.epsg = str(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
+                Process.taglist = list(orders.Parameter_list.values[i].split(',')[1].replace("'", "").split())
                 Process.Geocoding()
     
