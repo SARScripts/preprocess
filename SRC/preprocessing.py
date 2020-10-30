@@ -88,16 +88,22 @@ if __name__ == "__main__":
             else:
                 sys.exit('Image list does not match with alignment preprocess list')
                 
-        if orders.Process_type[i] == 'generate_interferogram':
-            if Process.baselinefiltered is not None:
-                Process.generate_interferogram()
-            else:
-                sys.exit('Generate list not found')
+        # if orders.Process_type[i] == 'generate_interferogram':
+        #     if Process.baselinefiltered is not None:
+        #         Process.generate_interferogram()
+        #     else:
+        #         sys.exit('Generate list not found')
                 
         if orders.Process_type[i] == 'Multilook':
             if Process.processdf is not None:
-                Process.azLooks = str(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
-                Process.rgLooks = str(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
+                #Controls if azimuth and range looks are passed, if not default values are used
+                if isinstance(orders.Parameter_list.values[i], list): 
+                    Process.azLooks = str(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
+                    Process.rgLooks = str(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
+                else:
+                    #If no values for multilooking are passed, default values assigned
+                    Process.azLooks = '4'
+                    Process.rgLooks = '19'
                 Process.Multilook()
         
         if orders.Process_type[i] == 'Geocoding':

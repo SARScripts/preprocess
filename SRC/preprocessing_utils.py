@@ -105,14 +105,14 @@ class model():
         imagelist['ImageDate'] = ImageDate
         return imagelist
 
-    def run_alignmentlist(self, pairspath, pairsdate):
+    def run_alignmentlist(self, pairspath, pairsdate, sufix):
         gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_Polariz_args_wkt.xml')
-        gptconvert_file = os.path.join(self.DirProject, 'RES', 'convert_DIMAP.xml')
+        #gptconvert_file = os.path.join(self.DirProject, 'RES', 'convert_DIMAP.xml')
         gptsubset_master = os.path.join(self.DirProject, 'RES', 'applyAOI_master_convertDIMAP.xml')
 
         #CHANGE OUTPUT SUFIX
         output_sufix = '_Aligned'
-        subdirout = '01_slc'
+        subdirout = '01_slc' + sufix
         # (lonmin, latmax, lonmax, latmin)
         lonmin = self.AOI[0]
         latmax = self.AOI[1]
@@ -140,7 +140,7 @@ class model():
             else:
                 print('Image format not supported: ' + input2)
                 sys.exit()
-            imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix)
+            imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix + sufix)
             if not os.path.isfile(imagebasename + '.dim') or self.overwrite == '1':
                 for polariz in input5:
                     output1 = imagebasename + '_' + polariz
@@ -221,8 +221,8 @@ class model():
         outputfiles.append(imagebasename + '.dim')
         #Fill processing info in df
         self.processdf['Image_date'] = datelist
-        self.processdf['Outputfiles_align'] = outputfiles
-        self.processdf['Processing_minutes'] = outputtimes
+        self.processdf['Outputfiles_align'+sufix] = outputfiles
+        self.processdf['Processing_minutes'+sufix] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
         
     def stack_polariz (self, imagepathlist, outputfile, pathgpt):
@@ -261,7 +261,7 @@ class model():
         imagelist = pd.read_csv(self.imagelistfile, sep=';', decimal=',')
         #Unzip and get initial metadata
         imagelist = self.unzipgetmeta (imagelist)
-        #self.processdf = imagelist
+        gpt_calibration = os.path.join(self.DirProject, 'RES', 'calibration_outputcomplex.xml')
         #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, RUN ALIGNMENT PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
         #Identify master image row and set up slave images dataframe
         if not any (imagelist['ImageDate'].str.contains(self.datemaster)):
@@ -273,14 +273,35 @@ class model():
         slavedf = slavedf.drop(slavedf[imagelist['ImageDate'].str.contains(self.datemaster)].index)
         pairspath = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageUnzip')
         pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate')
-        self.run_alignmentlist(pairspath, pairsdate)
+        sufix=''
+        self.run_alignmentlist(pairspath, pairsdate, sufix)
+        #Calibration of original products
+        outputfiles = []
+        outputtimes = []
+        for i in range(len(imagelist)):
+            time1 = datetime.now()
+            outfile = os.path.join(self.diroutorder, '00_calib', imagelist['ImageDate'][i]+'_calib.dim')
+            try:
+                p = subprocess.check_output([self.pathgpt, gpt_calibration, '-Pinput1='+imagelist['Image'][i], '-Ptarget1='+outfile])
+            except:
+                p = ''
+            outputfiles.append(outfile)
+            outputtimes.append((datetime.now()-time1).seconds/60)
+        self.processdf['Outputfiles_calib'] = outputfiles
+        self.processdf['Processing_minutes_calib'] = outputtimes
+        #TODO LANZAR PROCESO COREGISTR SOBRE CALIB, MONTAR PARES, ALMACENAR RUTAS Y TIEMPOS
+        pairspath_calib = mountpairs(pd.concat([self.processdf[imagelist['ImageDate'].str.contains(self.datemaster)], self.processdf.drop(self.processdf[imagelist['ImageDate'].str.contains(self.datemaster)].index)], sort=False).reset_index(), 'Outputfiles_calib')
+        sufix = '_calib'
+        self.run_alignmentlist(pairspath_calib, pairsdate, sufix)
 
     def generate_baselinelist (self):
         self.baselinelist = self.processdf.copy()
+        #Master record removed (no baseline between the same image as master and slave)
+        self.baselinelist = self.baselinelist[:-1]
         self.baselinelist['Master'] = self.datemaster
         self.baselinelist['Slave'] = self.processdf['Image_date']
-        self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles_align'][i], 'Perp Baseline')[1] for i in range(len(self.processdf))]
-        self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles_align'][i], 'Temp Baseline')[1] for i in range(len(self.processdf))]
+        self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles_align'][i], 'Perp Baseline')[1] for i in range(len(self.baselinelist))]
+        self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles_align'][i], 'Temp Baseline')[1] for i in range(len(self.baselinelist))]
         self.baselinelist = self.baselinelist.drop(['Image_date', 'Outputfiles_align', 'Processing_minutes'], axis=1)
         waninglist = self.baselinelist.copy()
         while len(waninglist)>1:
@@ -423,3 +444,24 @@ class model():
         self.processdf['Outputfiles_GC'] = outputfiles
         self.processdf['Processing_minutes_GC'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
+
+
+
+    # def do_calibration(source, polarization, pols):
+    #     print('\tCalibration...')
+    #     parameters = HashMap()
+    #     parameters.put('outputSigmaBand', True)
+    #     if polarization == 'DH':
+    #         parameters.put('sourceBands', 'Intensity_HH,Intensity_HV')
+    #     elif polarization == 'DV':
+    #         parameters.put('sourceBands', 'Intensity_VH,Intensity_VV')
+    #     elif polarization == 'SH' or polarization == 'HH':
+    #         parameters.put('sourceBands', 'Intensity_HH')
+    #     elif polarization == 'SV':
+    #         parameters.put('sourceBands', 'Intensity_VV')
+    #     else:
+    #         print("different polarization!")
+    #     parameters.put('selectedPolarisations', pols)
+    #     parameters.put('outputImageScaleInDb', False)
+    #     output = GPF.createProduct("Calibration", parameters, source)
+    #     return output
