@@ -125,22 +125,22 @@ class model():
             time1 = datetime.now()
             input1 = pairspath[i][0]
             input2 = pairspath[i][1]
-            if '_IW_SLC_' in input1:
-                input3 = ['IW1', 'IW2', 'IW3']
-            if '_1SDV_' in input1:
-                input5 = ['VV', 'VH']
+            #if '_IW_SLC_' in input1:
+            input3 = ['IW1', 'IW2', 'IW3']
+            #if '_1SDV_' in input1:
+            input5 = ['VV', 'VH']
             if any (self.AOI):
                 input4 = 'POLYGON (('+lonmin+' '+latmin+', '+lonmax+' '+latmin+', '+lonmax+' '+latmax+', '+lonmin+' '+latmax+', '+lonmin+' '+latmin+'))'
             else:
                 input4 = ''
             #The process is executed for every subswath
             
-            if os.path.splitext(input2)[1] == '.safe':
-                slavename = pairsdate[i][1] + '_SLC'
+            if os.path.splitext(input2)[1] == '.safe' or os.path.splitext(input2)[1] == '.dim':
+                slavename = pairsdate[i][1] + '_SLC' + sufix
             else:
                 print('Image format not supported: ' + input2)
                 sys.exit()
-            imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix + sufix)
+            imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + slavename + output_sufix)
             if not os.path.isfile(imagebasename + '.dim') or self.overwrite == '1':
                 for polariz in input5:
                     output1 = imagebasename + '_' + polariz
@@ -273,7 +273,7 @@ class model():
         slavedf = slavedf.drop(slavedf[imagelist['ImageDate'].str.contains(self.datemaster)].index)
         pairspath = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageUnzip')
         pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate')
-        sufix=''
+        sufix = ''
         self.run_alignmentlist(pairspath, pairsdate, sufix)
         #Calibration of original products
         outputfiles = []
@@ -289,7 +289,7 @@ class model():
             outputtimes.append((datetime.now()-time1).seconds/60)
         self.processdf['Outputfiles_calib'] = outputfiles
         self.processdf['Processing_minutes_calib'] = outputtimes
-        #TODO LANZAR PROCESO COREGISTR SOBRE CALIB, MONTAR PARES, ALMACENAR RUTAS Y TIEMPOS
+        #TO-DO LANZAR PROCESO COREGISTR SOBRE CALIB, MONTAR PARES, ALMACENAR RUTAS Y TIEMPOS
         pairspath_calib = mountpairs(pd.concat([self.processdf[imagelist['ImageDate'].str.contains(self.datemaster)], self.processdf.drop(self.processdf[imagelist['ImageDate'].str.contains(self.datemaster)].index)], sort=False).reset_index(), 'Outputfiles_calib')
         sufix = '_calib'
         self.run_alignmentlist(pairspath_calib, pairsdate, sufix)
@@ -302,7 +302,13 @@ class model():
         self.baselinelist['Slave'] = self.processdf['Image_date']
         self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles_align'][i], 'Perp Baseline')[1] for i in range(len(self.baselinelist))]
         self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles_align'][i], 'Temp Baseline')[1] for i in range(len(self.baselinelist))]
-        self.baselinelist = self.baselinelist.drop(['Image_date', 'Outputfiles_align', 'Processing_minutes'], axis=1)
+        fieldlist = []
+        #Delete fields mpt needed
+        for tag in ['Image_date', 'Outputfiles', 'Processing_minutes']:
+            for band in list(self.baselinelist):
+                if tag in band:
+                    fieldlist.append(band)
+        self.baselinelist = self.baselinelist.drop(fieldlist, axis=1)
         waninglist = self.baselinelist.copy()
         while len(waninglist)>1:
             for i in range(len(waninglist)-1):
@@ -361,9 +367,14 @@ class model():
         output_sufix = '_ML_' + self.azLooks + '_' + self.rgLooks
         outputfiles = []
         outputtimes = []
-        for i in range(len(self.processdf['Outputfiles_align'])):
-            if os.path.isfile(self.processdf['Outputfiles_align'][i]):
-                inputfile = self.processdf['Outputfiles_align'][i]
+        #If calibration has been applied, ML over calibrated products, if not, ML over non-calibrated products
+        if 'Outputfiles_align_calib' in list(self.processdf):
+            filesML = 'Outputfiles_align_calib'
+        else:
+            filesML = 'Outputfiles_align'
+        for i in range(len(self.processdf[filesML])):
+            if os.path.isfile(self.processdf[filesML][i]):
+                inputfile = self.processdf[filesML][i]
                 outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
                 if not os.path.isfile(outputfile) or self.overwrite == '1':
                     outputtimes.append(self.applyMultilook(inputfile, outputfile, self.azLooks, self.rgLooks))
@@ -426,23 +437,27 @@ class model():
         return((datetime.now()-time1).seconds/60)
         
     def Geocoding(self):
+        #Generate the baseline list file if it is not generated yet.
+        if not os.path.isfile(os.path.join(self.diroutorder, 'baselines.csv')):
+            self.generate_baselinelist()
         subdirout = '03_gc'
         output_sufix = '_GC'
         outputfiles = []
         outputtimes = []
-        for i in range(len(self.processdf['Outputfiles_ML'])):
-            if os.path.isfile(self.processdf['Outputfiles_ML'][i]):
-                inputfile = self.processdf['Outputfiles_ML'][i]
-                outputdir = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0])
-                if not os.path.isdir(outputdir) or self.overwrite == '1':
-                    outputtimes.append(self.applyGeocoding(inputfile, outputdir, self.epsg, self.taglist))
-                else:
-                    outputtimes.append('0')
-                outputfiles.append(outputdir)
+        indexGC = int(self.baselinefiltered[['Perp_Baseline']].idxmax())
+        #for i in range(len(self.processdf['Outputfiles_ML'])):
+        if os.path.isfile(self.processdf['Outputfiles_ML'][indexGC]):
+            inputfile = self.processdf['Outputfiles_ML'][indexGC]
+            outputdir = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0])
+            if not os.path.isdir(outputdir) or self.overwrite == '1':
+                outputtimes.append(self.applyGeocoding(inputfile, outputdir, self.epsg, self.taglist))
             else:
-                continue
-        self.processdf['Outputfiles_GC'] = outputfiles
-        self.processdf['Processing_minutes_GC'] = outputtimes
+                outputtimes.append('0')
+            outputfiles.append(outputdir)
+        else:
+            continue
+        self.processdf['Outputfiles_GC'][indexGC] = outputfiles
+        self.processdf['Processing_minutes_GC'][indexGC] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
 
 
