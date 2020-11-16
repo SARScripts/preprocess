@@ -79,7 +79,7 @@ class model():
         ImageUnzip = []
         ImageName = []
         ImageDate = []
-        diroutput = os.path.join(self.diroutorder, '00_datafiles')
+        diroutput = os.path.join(self.diroutorder, '00_data')
         if not os.path.exists(diroutput):
             os.makedirs(diroutput)
         for i in range(len(imagelist)):
@@ -106,13 +106,14 @@ class model():
         return imagelist
 
     def run_alignmentlist(self, pairspath, pairsdate, sufix):
-        gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_Polariz_args_wkt.xml')
+        gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_Polariz_wkt_flatearth_topophase.xml')
         #gptconvert_file = os.path.join(self.DirProject, 'RES', 'convert_DIMAP.xml')
         gptsubset_master = os.path.join(self.DirProject, 'RES', 'applyAOI_master_convertDIMAP.xml')
 
         #CHANGE OUTPUT SUFIX
-        output_sufix = '_Aligned'
+        output_sufix = '_Coregistered'
         subdirout = '01_slc' + sufix
+        nocorrection_tag = '_nocorrect'
         # (lonmin, latmax, lonmax, latmin)
         lonmin = self.AOI[0]
         latmax = self.AOI[1]
@@ -125,16 +126,13 @@ class model():
             time1 = datetime.now()
             input1 = pairspath[i][0]
             input2 = pairspath[i][1]
-            #if '_IW_SLC_' in input1:
             input3 = ['IW1', 'IW2', 'IW3']
-            #if '_1SDV_' in input1:
-            input5 = ['VV', 'VH']
             if any (self.AOI):
                 input4 = 'POLYGON (('+lonmin+' '+latmin+', '+lonmax+' '+latmin+', '+lonmax+' '+latmax+', '+lonmin+' '+latmax+', '+lonmin+' '+latmin+'))'
             else:
                 input4 = ''
+            input5 = ['VV', 'VH']
             #The process is executed for every subswath
-            
             if os.path.splitext(input2)[1] == '.safe' or os.path.splitext(input2)[1] == '.dim':
                 slavename = pairsdate[i][1] + '_SLC' + sufix
             else:
@@ -145,43 +143,67 @@ class model():
                 for polariz in input5:
                     output1 = imagebasename + '_' + polariz
                     for k in range(len(input3)):
-                        outputfile = os.path.join(output1 + '_' + input3[k] + '.dim')
+                        outputfile1 = os.path.join(output1 + '_' + input3[k] + '.dim')
+                        outputfile2 = os.path.join(output1 + '_' + input3[k] + nocorrection_tag + '.dim')
                         #OVERWRITE CONDITION FOR SUBSWATH GENERATION
                         try:
-                            p = subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4, '-Pinput5='+polariz,'-Ptarget1='+outputfile])
+                            p = subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4, '-Pinput5='+polariz,'-Ptarget1='+outputfile1,'-Ptarget2='+outputfile2])
                         except:
                             p = ''
                     #After processing subswaths, they are put together with TOPS Merge Workflow
-                    #List of subswaths by checking the output files
-                    subswath_list = sorted(glob.glob(os.path.join(output1 + '*.dim')))
+                    #List of subswaths by checking the output files. The output is added at the end of the list
+                    subswath_list1 = sorted(glob.glob(os.path.join(output1 + '*' + nocorrection_tag + '*.dim')))
+                    subswath_list2 = sorted(glob.glob(os.path.join(output1 + '*.dim')))
+                    for f in subswath_list1:
+                        subswath_list2.remove(f)
+                    #Append output filename to the list for merging
+                    subswath_list1.append(os.path.join(output1 + nocorrection_tag))
+                    subswath_list2.append(os.path.join(output1))
+
                     #Function TOPS Merge is only called when more than 1 subswath is generated. Only IW products supported (max. 3 subswaths)
-                    if len(subswath_list)>1:
-                        #OVERWRITE CONDITION FOR MERGE
-                        m = self.TOPS_Merge_subswaths(subswath_list, output1 + '.dim', self.pathgpt)
-                        for filePath in subswath_list:
+                    for listmerge in [subswath_list1, subswath_list2]:
+                        if len(listmerge)>1:
+                            #OVERWRITE CONDITION FOR MERGE
+                            m = self.TOPS_Merge_subswaths(listmerge[:-1], listmerge[-1] + '.dim', self.pathgpt)
+                            #Delete/Move temp files
+                            del listmerge[-1]    #Remove last element of list (output filename)
+                            tempdir = os.path.join(self.diroutorder, subdirout, 'temp')
+                            if not os.path.exists(tempdir):
+                                os.makedirs(tempdir)
+                            for filePath in listmerge:
+                                shutil.move(filePath, os.path.join(self.diroutorder, subdirout, 'temp', os.path.basename(filePath)))
+                                shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(self.diroutorder, subdirout, 'temp', os.path.splitext(os.path.basename(filePath))[0]+'.data'))
+                                # os.remove(filePath)
+                                # shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
+                        else:
+                            #Change output name from IWx to 'merged' in case AOI covers only one subswath
+                            shutil.move(listmerge[0], output1+'.dim')
+                            shutil.move(os.path.splitext(listmerge[0])[0]+'.data', output1+'.data')
+                polariz_list1 = sorted(glob.glob(imagebasename + '*V*nocorrect*.dim'))
+                polariz_list2 = sorted(glob.glob(imagebasename + '*V*.dim'))
+                for f in polariz_list1:
+                    polariz_list2.remove(f) 
+                for listpol in [polariz_list1, polariz_list2]:
+                    if listpol==polariz_list1:
+                        outputfile = imagebasename + nocorrection_tag + '.dim'
+                    if listpol == polariz_list2:
+                        outputfile = imagebasename + '.dim'
+                    if len(listpol)>1:
+                        #Stack polarizations (dual)
+                        m = self.stack_polariz(listpol, outputfile, self.pathgpt)
+                        #Delete temp files
+                        for filePath in listpol:
                             try:
-                                os.remove(filePath)
-                                shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
+                                shutil.move(filePath, os.path.join(self.diroutorder, subdirout, 'temp', os.path.basename(filePath)))
+                                shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(self.diroutorder, subdirout, 'temp', os.path.splitext(os.path.basename(filePath))[0]+'.data'))
+                                #os.remove(filePath)
+                                #shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
                             except:
                                 print("Error while deleting file : ", filePath)
                     else:
                         #Change output name from IWx to 'merged' in case AOI covers only one subswath
-                        shutil.move(subswath_list[0], output1+'.dim')
-                        shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', output1+'.data')
-                polariz_list = sorted(glob.glob(imagebasename + '*V*.dim'))
-                if len(polariz_list)>1:
-                    #Stack polarizations (dual)
-                    m = self.stack_polariz(polariz_list, imagebasename + '.dim', self.pathgpt)
-                    for filePath in polariz_list:
-                        try:
-                            os.remove(filePath)
-                            shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
-                        except:
-                            print("Error while deleting file : ", filePath)
-                else:
-                    #Change output name from IWx to 'merged' in case AOI covers only one subswath
-                    shutil.move(polariz_list[0], imagebasename+'.dim')
-                    shutil.move(os.path.splitext(polariz_list[0])[0]+'.data', imagebasename+'.data')
+                        shutil.move(listpol[0], imagebasename+'.dim')
+                        shutil.move(os.path.splitext(listpol[0])[0]+'.data', imagebasename+'.data')
             if os.path.isfile(imagebasename+'.dim'):
                 outputfiles.append(imagebasename+'.dim')
             else:
@@ -189,7 +211,7 @@ class model():
             outputtimes.append((datetime.now()-time1).seconds/60)
             datelist.append(pairsdate[i][1])
         #Subset master image by AOI and convert to DIMAP format for next processing, fill processing table.
-        imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + self.datemaster + '_SLC' + output_sufix)
+        imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + self.datemaster + '_SLC' + '_' + sufix + output_sufix)
         if not os.path.isfile(imagebasename+'.dim'):
             time1 = datetime.now()
             for k in range(len(input3)):
@@ -214,16 +236,22 @@ class model():
                 #Change output name from IWx to 'merged' in case AOI covers only one subswath
                 shutil.move(subswath_list[0], imagebasename+'.dim')
                 shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', imagebasename+'.data')
-            outputtimes.append((datetime.now()-time1).seconds/60)
+            timemaster = (datetime.now()-time1).seconds/60
         else:
             outputtimes.append('0')
-        datelist.append(self.datemaster)
-        outputfiles.append(imagebasename + '.dim')
-        #Fill processing info in df
-        self.processdf['Image_date'] = datelist
+        #datelist.append(self.datemaster)
+        #outputfiles.append(imagebasename + '.dim')
+        #get position of master
+        masterid = self.processdf[self.processdf['ImageDate_str']==self.datemaster].index[0]
+        datelist.insert(masterid, self.datemaster)
+        outputfiles.insert(masterid, imagebasename + '.dim')
+        outputtimes.insert(masterid, timemaster)
+
+        #Fill processing info into df
         self.processdf['Outputfiles_align'+sufix] = outputfiles
         self.processdf['Processing_minutes'+sufix] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
+        shutil.rmtree(tempdir)
         
     def stack_polariz (self, imagepathlist, outputfile, pathgpt):
         if len(imagepathlist)==2:
@@ -262,37 +290,38 @@ class model():
         #Unzip and get initial metadata
         imagelist = self.unzipgetmeta (imagelist)
         gpt_calibration = os.path.join(self.DirProject, 'RES', 'calibration_outputcomplex.xml')
+        
+        #Calibration of original products
+        outputfiles = []
+        outputtimes = []
+        for i in range(len(imagelist)):
+            outfile = os.path.join(self.diroutorder, '00_calib', imagelist['ImageDate'][i]+'_calib.dim')
+            time1 = datetime.now()
+            if not os.path.isfile(outfile) or self.overwrite == '1':
+                try:
+                    p = subprocess.check_output([self.pathgpt, gpt_calibration, '-Pinput1='+imagelist['Image'][i], '-Ptarget1='+outfile])
+                except:
+                    p = ''
+            outputfiles.append(outfile)
+            outputtimes.append(str((datetime.now()-time1).seconds/60))
+        self.processdf['Outputfiles_calib'] = outputfiles
+        self.processdf['Processing_minutes_calib'] = outputtimes
+        self.processdf['ImageDate'] = pd.to_datetime(imagelist['ImageDate'])
+        self.processdf = self.processdf.sort_values(by=['ImageDate'])
         #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, RUN ALIGNMENT PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
         #Identify master image row and set up slave images dataframe
         if not any (imagelist['ImageDate'].str.contains(self.datemaster)):
             datelist = list(imagelist.ImageDate.sort_values().astype(int))
             self.datemaster = str(datelist[min(range(len(datelist)), key = lambda i: abs(datelist[i]-(datelist[-1]+datelist[0])/2))])
+        self.processdf['ImageDate_str'] = [date_obj.strftime('%Y%m%d') for date_obj in self.processdf['ImageDate']]
         #Master image is reindexed to the top of the df
-        masterdf = imagelist[imagelist['ImageDate'].str.contains(self.datemaster)]
-        slavedf = imagelist.copy()
-        slavedf = slavedf.drop(slavedf[imagelist['ImageDate'].str.contains(self.datemaster)].index)
-        pairspath = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageUnzip')
-        pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate')
-        sufix = ''
-        self.run_alignmentlist(pairspath, pairsdate, sufix)
-        #Calibration of original products
-        outputfiles = []
-        outputtimes = []
-        for i in range(len(imagelist)):
-            time1 = datetime.now()
-            outfile = os.path.join(self.diroutorder, '00_calib', imagelist['ImageDate'][i]+'_calib.dim')
-            try:
-                p = subprocess.check_output([self.pathgpt, gpt_calibration, '-Pinput1='+imagelist['Image'][i], '-Ptarget1='+outfile])
-            except:
-                p = ''
-            outputfiles.append(outfile)
-            outputtimes.append((datetime.now()-time1).seconds/60)
-        self.processdf['Outputfiles_calib'] = outputfiles
-        self.processdf['Processing_minutes_calib'] = outputtimes
-        #TO-DO LANZAR PROCESO COREGISTR SOBRE CALIB, MONTAR PARES, ALMACENAR RUTAS Y TIEMPOS
-        pairspath_calib = mountpairs(pd.concat([self.processdf[imagelist['ImageDate'].str.contains(self.datemaster)], self.processdf.drop(self.processdf[imagelist['ImageDate'].str.contains(self.datemaster)].index)], sort=False).reset_index(), 'Outputfiles_calib')
+        masterdf = self.processdf[self.processdf['ImageDate'] == datetime.strptime(self.datemaster, '%Y%m%d')]
+        slavedf = self.processdf.copy()
+        slavedf = slavedf.drop(slavedf[self.processdf['ImageDate'] == datetime.strptime(self.datemaster, '%Y%m%d')].index)
+        pairspath = mountpairs(pd.concat([masterdf['Outputfiles_calib'], slavedf['Outputfiles_calib']], sort=False).reset_index(), 'Outputfiles_calib')
+        pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate_str')
         sufix = '_calib'
-        self.run_alignmentlist(pairspath_calib, pairsdate, sufix)
+        self.run_alignmentlist(pairspath, pairsdate, sufix)
 
     def generate_baselinelist (self):
         self.baselinelist = self.processdf.copy()
@@ -332,15 +361,6 @@ class model():
                 self.baselinefiltered = self.baselinelist.copy()
         self.baselinefiltered.to_csv(os.path.join(self.diroutorder, 'baselines.csv'), sep=';', index=False)
 
-    # def generate_interferogram(self):
-    #     gptxml_file = os.path.join(self.DirProject, 'RES', 'Interferogram_Multilook.xml')
-    #     #for i in range(len(self.baselinefiltered)):
-    #     #Fill output files if pair is already coregistered
-    #     for i in range(len(self.processdf)):
-    #         for j in range(len(self.baselinefiltered)):
-    #             if self.processdf['Image_date'][i] == self.baselinefiltered['Slave'][j] and self.baselinefiltered['Master'][j] == self.datemaster:
-    #                 self.baselinefiltered.loc[j, 'Outputfiles_align'] = self.processdf['Outputfiles_align'][i]
-
     def applyMultilook(self, inputfile, outputfile, azLooks, rgLooks):
         sys.path.append(self.snappypath)
         import snappy
@@ -367,6 +387,7 @@ class model():
         output_sufix = '_ML_' + self.azLooks + '_' + self.rgLooks
         outputfiles = []
         outputtimes = []
+        msg = []
         #If calibration has been applied, ML over calibrated products, if not, ML over non-calibrated products
         if 'Outputfiles_align_calib' in list(self.processdf):
             filesML = 'Outputfiles_align_calib'
@@ -382,11 +403,14 @@ class model():
                     outputtimes.append('0')
                 outputfiles.append(outputfile)
             else:
+                msg.append = 'Multilook not generated file ' + self.processdf[filesML][i] + ' not found'
                 continue
         self.processdf['Outputfiles_ML'] = outputfiles
         self.processdf['Processing_minutes_ML'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
-
+        msg = 'Multilok generated'
+        return msg
+    
     def applyGeocoding(self, inputfile, outputdir, epsg, taglist):
         time1 = datetime.now()
         prod = ProductIO.readProduct(inputfile)
@@ -407,8 +431,6 @@ class model():
             os.makedirs(outputdir)
         np.save(os.path.join(outputdir, 'lat'), lat_arr)
         np.save(os.path.join(outputdir, 'lon'), lon_arr)
-        #np.savetxt(os.path.join(outputdir, 'lat'), lat_arr, delimiter=';')
-        #np.savetxt(os.path.join(outputdir, 'lon'), lon_arr, delimiter=';')
         
         inProj = Proj('epsg:4326')
         outProj = Proj('epsg:'+epsg)
@@ -436,6 +458,25 @@ class model():
                 np.save(os.path.join(outputdir, band), grid_data)
         return((datetime.now()-time1).seconds/60)
         
+    def applyTerrainCorrection(inputfile, outputfile, spatialres, epsg):
+        time1 = datetime.now()
+        parameters = HashMap()()
+        prod = ProductIO.readProduct(inputfile)
+        parameters.put('demResamplingMethod', 'NEAREST_NEIGHBOUR') 
+        parameters.put('imgResamplingMethod', 'NEAREST_NEIGHBOUR') 
+        parameters.put('demName', 'SRTM 3Sec') 
+        parameters.put('pixelSpacingInMeter', spatialres) 
+        parameters.put('mapProjection', epsg)
+        parameters.put('saveDEM', True)
+        parameters.put('nodataValueAtSea', False)
+        parameters.put('saveLatLon', True)
+        parameters.put('saveIncidenceAngleFromEllipsoid', True)
+        parameters.put('saveLocalIncidenceAngle', True)
+        parameters.put('saveProjectedLocalIncidenceAngle', True)
+        prodTC = GPF.createProduct("Terrain-Correction", parameters, prod) 
+        ProductIO.writeProduct(prodTC, outputfile, 'GeoTIFF')
+        return datetime.now() - time1
+
     def Geocoding(self):
         #Generate the baseline list file if it is not generated yet.
         if not os.path.isfile(os.path.join(self.diroutorder, 'baselines.csv')):
@@ -450,16 +491,45 @@ class model():
             inputfile = self.processdf['Outputfiles_ML'][indexGC]
             outputdir = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0])
             if not os.path.isdir(outputdir) or self.overwrite == '1':
-                outputtimes.append(self.applyGeocoding(inputfile, outputdir, self.epsg, self.taglist))
+                outputtimes.append(self.applyTerrainCorrection(inputfile, outputdir, self.spatialres, self.epsg))
             else:
                 outputtimes.append('0')
             outputfiles.append(outputdir)
         else:
-            continue
+            msg = 'Geocoding not generated file ' + self.processdf['Outputfiles_ML'][indexGC] + ' not found'
+            return msg
         self.processdf['Outputfiles_GC'][indexGC] = outputfiles
         self.processdf['Processing_minutes_GC'][indexGC] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
+        msg = 'Geocoding generated'
+        return msg
 
+      # ### TERRAIN CORRECTION
+      # parameters = HashMap()     
+      # parameters.put('demResamplingMethod', 'NEAREST_NEIGHBOUR') 
+      # parameters.put('imgResamplingMethod', 'NEAREST_NEIGHBOUR') 
+      # parameters.put('demName', 'SRTM 3Sec') 
+      # parameters.put('pixelSpacingInMeter', 10.0) 
+      # parameters.put('sourceBands', 'Sigma0_' + polarization)
+ 
+      # terrain = output + date + "_corrected_" + polarization 
+      # target_2 = GPF.createProduct("Terrain-Correction", parameters, subset) 
+      # ProductIO.writeProduct(target_2, terrain, 'GeoTIFF')
+
+#https://github.com/wajuqi/Sentinel-1-preprocessing-using-Snappy/blob/master/s1_preprocessing.py
+# def do_terrain_correction(source, proj, downsample):
+#     print('\tTerrain correction...')
+#     parameters = HashMap()
+#     parameters.put('demName', 'GETASSE30')
+#     parameters.put('imgResamplingMethod', 'BILINEAR_INTERPOLATION')
+#     parameters.put('mapProjection', proj)       # comment this line if no need to convert to UTM/WGS84, default is WGS84
+#     parameters.put('saveProjectedLocalIncidenceAngle', True)
+#     parameters.put('saveSelectedSourceBand', True)
+#     while downsample == 1:                      # downsample: 1 -- need downsample to 40m, 0 -- no need to downsample
+#         parameters.put('pixelSpacingInMeter', 40.0)
+#         break
+#     output = GPF.createProduct('Terrain-Correction', parameters, source)
+#     return output
 
 
     # def do_calibration(source, polarization, pols):

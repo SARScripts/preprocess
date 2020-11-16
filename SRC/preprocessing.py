@@ -109,6 +109,7 @@ if __name__ == "__main__":
         if orders.Process_type[i] == 'Geocoding':
             if Process.processdf is not None:
                 Process.epsg = str(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
-                Process.taglist = list(orders.Parameter_list.values[i].split(',')[1].replace("'", "").split())
+                Process.spatialres = str(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
+                #Process.taglist = list(orders.Parameter_list.values[i].split(',')[1].replace("'", "").split())
                 Process.Geocoding()
     

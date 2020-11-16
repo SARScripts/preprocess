@@ -4,14 +4,14 @@
     <operator>Read</operator>
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_ESD_3secSRTM_clean/00_calib/20200327_calib.dim</file>
+      <file>$input1</file>
     </parameters>
   </node>
   <node id="Read(2)">
     <operator>Read</operator>
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_ESD_3secSRTM_clean/00_calib/20200303_calib.dim</file>
+      <file>$input2</file>
     </parameters>
   </node>
   <node id="TOPSAR-Split">
@@ -20,11 +20,11 @@
       <sourceProduct refid="Read"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <subswath>IW1</subswath>
-      <selectedPolarisations>VH</selectedPolarisations>
+      <subswath>$input3</subswath>
+      <selectedPolarisations>$input5</selectedPolarisations>
       <firstBurstIndex>1</firstBurstIndex>
       <lastBurstIndex>9</lastBurstIndex>
-      <wktAoi/>
+      <wktAoi>$input4</wktAoi>
     </parameters>
   </node>
   <node id="TOPSAR-Split(2)">
@@ -33,11 +33,11 @@
       <sourceProduct refid="Read(2)"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <subswath>IW1</subswath>
-      <selectedPolarisations>VH</selectedPolarisations>
+      <subswath>$input3</subswath>
+      <selectedPolarisations>$input5</selectedPolarisations>
       <firstBurstIndex>1</firstBurstIndex>
       <lastBurstIndex>9</lastBurstIndex>
-      <wktAoi/>
+      <wktAoi>$input4</wktAoi>
     </parameters>
   </node>
   <node id="Apply-Orbit-File">
@@ -90,7 +90,7 @@
       <srpPolynomialDegree>5</srpPolynomialDegree>
       <srpNumberPoints>501</srpNumberPoints>
       <orbitDegree>3</orbitDegree>
-      <includeCoherence>false</includeCoherence>
+      <includeCoherence>true</includeCoherence>
       <cohWinAz>2</cohWinAz>
       <cohWinRg>10</cohWinRg>
       <squarePixel>true</squarePixel>
@@ -100,8 +100,8 @@
       <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
       <externalDEMApplyEGM/>
       <tileExtensionPercent>100</tileExtensionPercent>
-      <outputElevation>true</outputElevation>
-      <outputLatLon>true</outputLatLon>
+      <outputElevation>false</outputElevation>
+      <outputLatLon>false</outputLatLon>
     </parameters>
   </node>
   <node id="TOPSAR-Deburst">
@@ -153,8 +153,8 @@
       <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
       <externalDEMApplyEGM>true</externalDEMApplyEGM>
       <tileExtensionPercent>100</tileExtensionPercent>
-      <outputElevation>true</outputElevation>
-      <outputLatLon>true</outputLatLon>
+      <outputElevation>false</outputElevation>
+      <outputLatLon>false</outputLatLon>
     </parameters>
   </node>
   <node id="TOPSAR-Deburst(2)">
@@ -172,7 +172,7 @@
       <sourceProduct refid="TOPSAR-Deburst(2)"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_SNAP/20200327_calib_Orb_Stack_Ifg_Deb.dim</file>
+      <file>$target1</file>
       <formatName>BEAM-DIMAP</formatName>
     </parameters>
   </node>
@@ -182,7 +182,7 @@
       <sourceProduct refid="TOPSAR-Deburst"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file>/media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_SNAP/20200327_calib_Orb_Stack_Ifg_Deb_nocorr.dim</file>
+      <file>$target2</file>
       <formatName>BEAM-DIMAP</formatName>
     </parameters>
   </node>
