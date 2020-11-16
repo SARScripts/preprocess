@@ -79,7 +79,7 @@ if __name__ == "__main__":
             Process.alignment_ifg ()
         if orders.Process_type[i] == 'generate_list':
             if Process.processdf is not None:
-                for im in Process.processdf['Outputfiles_align']:
+                for im in Process.processdf['Outputfiles_align_calib']:
                     if not os.path.isfile(im):
                         sys.exit('Outputs from coregistration processing not found (' + im + ')')
                 Process.maxbasetemp = float(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))

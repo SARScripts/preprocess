@@ -114,6 +114,9 @@ class model():
         output_sufix = '_Coregistered'
         subdirout = '01_slc' + sufix
         nocorrection_tag = '_nocorrect'
+        tempdir = os.path.join(self.diroutorder, subdirout, 'temp')
+        if not os.path.exists(tempdir):
+            os.makedirs(tempdir)
         # (lonmin, latmax, lonmax, latmin)
         lonmin = self.AOI[0]
         latmax = self.AOI[1]
@@ -167,9 +170,6 @@ class model():
                             m = self.TOPS_Merge_subswaths(listmerge[:-1], listmerge[-1] + '.dim', self.pathgpt)
                             #Delete/Move temp files
                             del listmerge[-1]    #Remove last element of list (output filename)
-                            tempdir = os.path.join(self.diroutorder, subdirout, 'temp')
-                            if not os.path.exists(tempdir):
-                                os.makedirs(tempdir)
                             for filePath in listmerge:
                                 shutil.move(filePath, os.path.join(self.diroutorder, subdirout, 'temp', os.path.basename(filePath)))
                                 shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(self.diroutorder, subdirout, 'temp', os.path.splitext(os.path.basename(filePath))[0]+'.data'))
@@ -238,9 +238,8 @@ class model():
                 shutil.move(os.path.splitext(subswath_list[0])[0]+'.data', imagebasename+'.data')
             timemaster = (datetime.now()-time1).seconds/60
         else:
-            outputtimes.append('0')
-        #datelist.append(self.datemaster)
-        #outputfiles.append(imagebasename + '.dim')
+            timemaster = '0'
+
         #get position of master
         masterid = self.processdf[self.processdf['ImageDate_str']==self.datemaster].index[0]
         datelist.insert(masterid, self.datemaster)
@@ -248,8 +247,8 @@ class model():
         outputtimes.insert(masterid, timemaster)
 
         #Fill processing info into df
-        self.processdf['Outputfiles_align'+sufix] = outputfiles
-        self.processdf['Processing_minutes'+sufix] = outputtimes
+        self.processdf['Outputfiles_align_calib'] = outputfiles
+        self.processdf['Processing_minutes_align'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
         shutil.rmtree(tempdir)
         
@@ -326,14 +325,15 @@ class model():
     def generate_baselinelist (self):
         self.baselinelist = self.processdf.copy()
         #Master record removed (no baseline between the same image as master and slave)
-        self.baselinelist = self.baselinelist[:-1]
+        self.baselinelist = self.baselinelist.drop(self.baselinelist[self.processdf['ImageDate'] == datetime.strptime(self.datemaster, '%Y%m%d')].index)
+        self.baselinelist.reset_index(drop=True, inplace=True) 
         self.baselinelist['Master'] = self.datemaster
-        self.baselinelist['Slave'] = self.processdf['Image_date']
-        self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles_align'][i], 'Perp Baseline')[1] for i in range(len(self.baselinelist))]
-        self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.processdf['Outputfiles_align'][i], 'Temp Baseline')[1] for i in range(len(self.baselinelist))]
+        self.baselinelist['Slave'] = self.baselinelist['ImageDate_str']
+        self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.baselinelist['Outputfiles_align_calib'][i], 'Perp Baseline')[1] for i in range(len(self.baselinelist))]
+        self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.baselinelist['Outputfiles_align_calib'][i], 'Temp Baseline')[1] for i in range(len(self.baselinelist))]
         fieldlist = []
         #Delete fields mpt needed
-        for tag in ['Image_date', 'Outputfiles', 'Processing_minutes']:
+        for tag in ['ImageDate', 'Outputfiles_', 'Processing_minutes']:
             for band in list(self.baselinelist):
                 if tag in band:
                     fieldlist.append(band)
@@ -343,9 +343,9 @@ class model():
             for i in range(len(waninglist)-1):
                 perp = float(waninglist['Perp_Baseline'][0]) - float(waninglist['Perp_Baseline'][i+1])
                 temp = float(waninglist['Temp_Baseline'][0]) - float(waninglist['Temp_Baseline'][i+1])
-                self.baselinelist.loc[len(self.baselinelist)] = str(waninglist['Slave'][0]), str(waninglist['Slave'][i+1]), perp, temp
+                self.baselinelist.loc[len(self.baselinelist)] = [str(waninglist['Slave'][0]), str(waninglist['Slave'][i+1]), perp, temp]
             waninglist = waninglist.drop(0)
-            waninglist = waninglist.reset_index(drop=True)
+            waninglist.reset_index(drop=True, inplace=True)
         #Filter table with maxbasetemp and maxbaseperp
         self.baselinelist['Temp_Baseline'] = abs(pd.to_numeric(self.baselinelist['Temp_Baseline']))
         self.baselinelist['Perp_Baseline'] = abs(pd.to_numeric(self.baselinelist['Perp_Baseline']))
@@ -458,9 +458,9 @@ class model():
                 np.save(os.path.join(outputdir, band), grid_data)
         return((datetime.now()-time1).seconds/60)
         
-    def applyTerrainCorrection(inputfile, outputfile, spatialres, epsg):
+    def applyTerrainCorrection(self, inputfile, outputfile, spatialres, epsg):
         time1 = datetime.now()
-        parameters = HashMap()()
+        parameters = HashMap()
         prod = ProductIO.readProduct(inputfile)
         parameters.put('demResamplingMethod', 'NEAREST_NEIGHBOUR') 
         parameters.put('imgResamplingMethod', 'NEAREST_NEIGHBOUR') 
@@ -474,7 +474,7 @@ class model():
         parameters.put('saveLocalIncidenceAngle', True)
         parameters.put('saveProjectedLocalIncidenceAngle', True)
         prodTC = GPF.createProduct("Terrain-Correction", parameters, prod) 
-        ProductIO.writeProduct(prodTC, outputfile, 'GeoTIFF')
+        ProductIO.writeProduct(prodTC, outputfile, 'BEAM-DIMAP')
         return datetime.now() - time1
 
     def Geocoding(self):
@@ -489,9 +489,9 @@ class model():
         #for i in range(len(self.processdf['Outputfiles_ML'])):
         if os.path.isfile(self.processdf['Outputfiles_ML'][indexGC]):
             inputfile = self.processdf['Outputfiles_ML'][indexGC]
-            outputdir = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0])
+            outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0])
             if not os.path.isdir(outputdir) or self.overwrite == '1':
-                outputtimes.append(self.applyTerrainCorrection(inputfile, outputdir, self.spatialres, self.epsg))
+                outputtimes.append(self.applyTerrainCorrection(inputfile, outputfile, self.spatialres, self.epsg))
             else:
                 outputtimes.append('0')
             outputfiles.append(outputdir)
@@ -503,50 +503,3 @@ class model():
         self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
         msg = 'Geocoding generated'
         return msg
-
-      # ### TERRAIN CORRECTION
-      # parameters = HashMap()     
-      # parameters.put('demResamplingMethod', 'NEAREST_NEIGHBOUR') 
-      # parameters.put('imgResamplingMethod', 'NEAREST_NEIGHBOUR') 
-      # parameters.put('demName', 'SRTM 3Sec') 
-      # parameters.put('pixelSpacingInMeter', 10.0) 
-      # parameters.put('sourceBands', 'Sigma0_' + polarization)
- 
-      # terrain = output + date + "_corrected_" + polarization 
-      # target_2 = GPF.createProduct("Terrain-Correction", parameters, subset) 
-      # ProductIO.writeProduct(target_2, terrain, 'GeoTIFF')
-
-#https://github.com/wajuqi/Sentinel-1-preprocessing-using-Snappy/blob/master/s1_preprocessing.py
-# def do_terrain_correction(source, proj, downsample):
-#     print('\tTerrain correction...')
-#     parameters = HashMap()
-#     parameters.put('demName', 'GETASSE30')
-#     parameters.put('imgResamplingMethod', 'BILINEAR_INTERPOLATION')
-#     parameters.put('mapProjection', proj)       # comment this line if no need to convert to UTM/WGS84, default is WGS84
-#     parameters.put('saveProjectedLocalIncidenceAngle', True)
-#     parameters.put('saveSelectedSourceBand', True)
-#     while downsample == 1:                      # downsample: 1 -- need downsample to 40m, 0 -- no need to downsample
-#         parameters.put('pixelSpacingInMeter', 40.0)
-#         break
-#     output = GPF.createProduct('Terrain-Correction', parameters, source)
-#     return output
-
-
-    # def do_calibration(source, polarization, pols):
-    #     print('\tCalibration...')
-    #     parameters = HashMap()
-    #     parameters.put('outputSigmaBand', True)
-    #     if polarization == 'DH':
-    #         parameters.put('sourceBands', 'Intensity_HH,Intensity_HV')
-    #     elif polarization == 'DV':
-    #         parameters.put('sourceBands', 'Intensity_VH,Intensity_VV')
-    #     elif polarization == 'SH' or polarization == 'HH':
-    #         parameters.put('sourceBands', 'Intensity_HH')
-    #     elif polarization == 'SV':
-    #         parameters.put('sourceBands', 'Intensity_VV')
-    #     else:
-    #         print("different polarization!")
-    #     parameters.put('selectedPolarisations', pols)
-    #     parameters.put('outputImageScaleInDb', False)
-    #     output = GPF.createProduct("Calibration", parameters, source)
-    #     return output
