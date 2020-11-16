@@ -490,7 +490,7 @@ class model():
         if os.path.isfile(self.processdf['Outputfiles_ML'][indexGC]):
             inputfile = self.processdf['Outputfiles_ML'][indexGC]
             outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0])
-            if not os.path.isdir(outputdir) or self.overwrite == '1':
+            if not os.path.isdir(outputfile) or self.overwrite == '1':
                 outputtimes.append(self.applyTerrainCorrection(inputfile, outputfile, self.spatialres, self.epsg))
             else:
                 outputtimes.append('0')
