@@ -76,7 +76,8 @@ if __name__ == "__main__":
             #Parameters check
             if (not os.path.isfile(orders.Parameter_list.values[0].split(',')[0])):
                 sys.exit('Introduce a file with a list of image paths')
-            Process.alignment_ifg ()
+            msg = Process.alignment_ifg ()
+            print(msg)
         if orders.Process_type[i] == 'generate_list':
             if Process.processdf is not None:
                 for im in Process.processdf['Outputfiles_align_calib']:
@@ -104,12 +105,14 @@ if __name__ == "__main__":
                     #If no values for multilooking are passed, default values assigned
                     Process.azLooks = '4'
                     Process.rgLooks = '19'
-                Process.Multilook()
+                msg = Process.Multilook()
+                print(msg)
         
         if orders.Process_type[i] == 'Geocoding':
             if Process.processdf is not None:
                 Process.epsg = str(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
                 Process.spatialres = str(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
                 #Process.taglist = list(orders.Parameter_list.values[i].split(',')[1].replace("'", "").split())
-                Process.Geocoding()
+                msg = Process.Geocoding()
+                print(msg)
     

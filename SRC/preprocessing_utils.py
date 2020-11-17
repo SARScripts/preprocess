@@ -12,16 +12,16 @@ import os
 import subprocess
 import pandas as pd
 from datetime import datetime 
-import glob
+from glob import glob
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 import shutil
 import numpy as np
 from scipy.interpolate import griddata
-import gdal
+import gdal, osr
 from pyproj import Proj, transform
-#import snappy
 from snappy import ProductIO, GPF, HashMap
+
 def listar (a): #Genera una lista de un string separado por comas leído de un config file
     if pd.isnull(a):
         return ''
@@ -63,7 +63,6 @@ class model():
             os.makedirs(self.diroutorder)
             
         sys.path.append(self.snappypath)
-
 
     def searchMetabytag(self, metafilepath, tag):
         meta = []
@@ -107,7 +106,6 @@ class model():
 
     def run_alignmentlist(self, pairspath, pairsdate, sufix):
         gptxml_file = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_Polariz_wkt_flatearth_topophase.xml')
-        #gptconvert_file = os.path.join(self.DirProject, 'RES', 'convert_DIMAP.xml')
         gptsubset_master = os.path.join(self.DirProject, 'RES', 'applyAOI_master_convertDIMAP.xml')
 
         #CHANGE OUTPUT SUFIX
@@ -117,7 +115,6 @@ class model():
         tempdir = os.path.join(self.diroutorder, subdirout, 'temp')
         if not os.path.exists(tempdir):
             os.makedirs(tempdir)
-        # (lonmin, latmax, lonmax, latmin)
         lonmin = self.AOI[0]
         latmax = self.AOI[1]
         lonmax = self.AOI[2]
@@ -155,8 +152,8 @@ class model():
                             p = ''
                     #After processing subswaths, they are put together with TOPS Merge Workflow
                     #List of subswaths by checking the output files. The output is added at the end of the list
-                    subswath_list1 = sorted(glob.glob(os.path.join(output1 + '*' + nocorrection_tag + '*.dim')))
-                    subswath_list2 = sorted(glob.glob(os.path.join(output1 + '*.dim')))
+                    subswath_list1 = sorted(glob(os.path.join(output1 + '*' + nocorrection_tag + '*.dim')))
+                    subswath_list2 = sorted(glob(os.path.join(output1 + '*.dim')))
                     for f in subswath_list1:
                         subswath_list2.remove(f)
                     #Append output filename to the list for merging
@@ -173,14 +170,12 @@ class model():
                             for filePath in listmerge:
                                 shutil.move(filePath, os.path.join(self.diroutorder, subdirout, 'temp', os.path.basename(filePath)))
                                 shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(self.diroutorder, subdirout, 'temp', os.path.splitext(os.path.basename(filePath))[0]+'.data'))
-                                # os.remove(filePath)
-                                # shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
                         else:
                             #Change output name from IWx to 'merged' in case AOI covers only one subswath
                             shutil.move(listmerge[0], output1+'.dim')
                             shutil.move(os.path.splitext(listmerge[0])[0]+'.data', output1+'.data')
-                polariz_list1 = sorted(glob.glob(imagebasename + '*V*nocorrect*.dim'))
-                polariz_list2 = sorted(glob.glob(imagebasename + '*V*.dim'))
+                polariz_list1 = sorted(glob(imagebasename + '*V*nocorrect*.dim'))
+                polariz_list2 = sorted(glob(imagebasename + '*V*.dim'))
                 for f in polariz_list1:
                     polariz_list2.remove(f) 
                 for listpol in [polariz_list1, polariz_list2]:
@@ -196,8 +191,6 @@ class model():
                             try:
                                 shutil.move(filePath, os.path.join(self.diroutorder, subdirout, 'temp', os.path.basename(filePath)))
                                 shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(self.diroutorder, subdirout, 'temp', os.path.splitext(os.path.basename(filePath))[0]+'.data'))
-                                #os.remove(filePath)
-                                #shutil.rmtree(os.path.splitext(filePath)[0]+'.data')
                             except:
                                 print("Error while deleting file : ", filePath)
                     else:
@@ -211,7 +204,7 @@ class model():
             outputtimes.append((datetime.now()-time1).seconds/60)
             datelist.append(pairsdate[i][1])
         #Subset master image by AOI and convert to DIMAP format for next processing, fill processing table.
-        imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + self.datemaster + '_SLC' + '_' + sufix + output_sufix)
+        imagebasename = os.path.join(self.diroutorder, subdirout, self.datemaster + '_' + self.datemaster + '_SLC' + sufix + output_sufix)
         if not os.path.isfile(imagebasename+'.dim'):
             time1 = datetime.now()
             for k in range(len(input3)):
@@ -222,7 +215,7 @@ class model():
                 except:
                     p = ''
             #After processing subswaths, they are put together with TOPS Merge Workflow
-            subswath_list = sorted(glob.glob(os.path.join(imagebasename + '*.dim')))
+            subswath_list = sorted(glob(os.path.join(imagebasename + '*.dim')))
             if len(subswath_list)>1:
                 #OVERWRITE CONDITION FOR MERGE
                 m = self.TOPS_Merge_subswaths(subswath_list, imagebasename + '.dim', self.pathgpt)
@@ -239,8 +232,16 @@ class model():
             timemaster = (datetime.now()-time1).seconds/60
         else:
             timemaster = '0'
-
-        #get position of master
+        
+        #Process differential phase (interferograms with and without flat Earth and topographic corrections)
+        phaselist = outputfiles
+        phasedifflist = [file + nocorrection_tag for file in outputfiles]
+        ifgpairs = []
+        ifgpairs = [(phaselist[j], phasedifflist[j]) for j in range(len(phaselist))]
+        
+        
+        
+        #Get position of master
         masterid = self.processdf[self.processdf['ImageDate_str']==self.datemaster].index[0]
         datelist.insert(masterid, self.datemaster)
         outputfiles.insert(masterid, imagebasename + '.dim')
@@ -251,6 +252,9 @@ class model():
         self.processdf['Processing_minutes_align'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
         shutil.rmtree(tempdir)
+        
+        #Generate reference matrices (lat/lon) for further geocoding
+        Geocoding(self, self.processdf['Outputfiles_align_calib'], '')
         
     def stack_polariz (self, imagepathlist, outputfile, pathgpt):
         if len(imagepathlist)==2:
@@ -307,6 +311,7 @@ class model():
         self.processdf['Processing_minutes_calib'] = outputtimes
         self.processdf['ImageDate'] = pd.to_datetime(imagelist['ImageDate'])
         self.processdf = self.processdf.sort_values(by=['ImageDate'])
+        
         #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, RUN ALIGNMENT PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
         #Identify master image row and set up slave images dataframe
         if not any (imagelist['ImageDate'].str.contains(self.datemaster)):
@@ -321,6 +326,8 @@ class model():
         pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate_str')
         sufix = '_calib'
         self.run_alignmentlist(pairspath, pairsdate, sufix)
+        msg = 'Coregistering generated'
+        return msg
 
     def generate_baselinelist (self):
         self.baselinelist = self.processdf.copy()
@@ -408,7 +415,7 @@ class model():
         self.processdf['Outputfiles_ML'] = outputfiles
         self.processdf['Processing_minutes_ML'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
-        msg = 'Multilok generated'
+        msg = 'Multilook generated'
         return msg
     
     def applyGeocoding(self, inputfile, outputdir, epsg, taglist):
@@ -458,14 +465,13 @@ class model():
                 np.save(os.path.join(outputdir, band), grid_data)
         return((datetime.now()-time1).seconds/60)
         
-    def applyTerrainCorrection(self, inputfile, outputfile, spatialres, epsg):
+    def applyTerrainCorrection(self, inputfile, outputfile, pixelspacing, epsg):
         time1 = datetime.now()
         parameters = HashMap()
         prod = ProductIO.readProduct(inputfile)
         parameters.put('demResamplingMethod', 'NEAREST_NEIGHBOUR') 
         parameters.put('imgResamplingMethod', 'NEAREST_NEIGHBOUR') 
         parameters.put('demName', 'SRTM 3Sec') 
-        parameters.put('pixelSpacingInMeter', spatialres) 
         parameters.put('mapProjection', epsg)
         parameters.put('saveDEM', True)
         parameters.put('nodataValueAtSea', False)
@@ -473,33 +479,68 @@ class model():
         parameters.put('saveIncidenceAngleFromEllipsoid', True)
         parameters.put('saveLocalIncidenceAngle', True)
         parameters.put('saveProjectedLocalIncidenceAngle', True)
-        prodTC = GPF.createProduct("Terrain-Correction", parameters, prod) 
+        if pixelspacing == '':
+            prodTC = GPF.createProduct("Terrain-Correction", parameters, prod) 
+        else:
+            parameters.put('pixelSpacingInMeter', spatialres) 
+            prodTC = GPF.createProduct("Terrain-Correction", parameters, prod) 
         ProductIO.writeProduct(prodTC, outputfile, 'BEAM-DIMAP')
         return datetime.now() - time1
 
-    def Geocoding(self):
+    def Geocoding(self, listinputfiles, pixelspacing):
         #Generate the baseline list file if it is not generated yet.
         if not os.path.isfile(os.path.join(self.diroutorder, 'baselines.csv')):
             self.generate_baselinelist()
         subdirout = '03_gc'
-        output_sufix = '_GC'
-        outputfiles = []
-        outputtimes = []
+        outputfiles = [''] * len(self.processdf)
+        outputtimes = ['0'] * len(self.processdf)
         indexGC = int(self.baselinefiltered[['Perp_Baseline']].idxmax())
-        #for i in range(len(self.processdf['Outputfiles_ML'])):
-        if os.path.isfile(self.processdf['Outputfiles_ML'][indexGC]):
-            inputfile = self.processdf['Outputfiles_ML'][indexGC]
+        inputfile = listinputfiles[indexGC]
+        if os.path.isfile(inputfile):
             outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0])
             if not os.path.isdir(outputfile) or self.overwrite == '1':
-                outputtimes.append(self.applyTerrainCorrection(inputfile, outputfile, self.spatialres, self.epsg))
-            else:
-                outputtimes.append('0')
-            outputfiles.append(outputdir)
+                outputtimes[indexGC] = self.applyTerrainCorrection(inputfile, outputfile, pixelspacing, self.epsg)
+            outputfiles[indexGC] = outputfile
         else:
-            msg = 'Geocoding not generated file ' + self.processdf['Outputfiles_ML'][indexGC] + ' not found'
+            msg = 'Geocoding not generated in file ' + listinputfiles[indexGC] + ' not found'
             return msg
-        self.processdf['Outputfiles_GC'][indexGC] = outputfiles
-        self.processdf['Processing_minutes_GC'][indexGC] = outputtimes
+        self.processdf['Outputfiles_GC'] = outputfiles
+        self.processdf['Processing_minutes_GC'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
         msg = 'Geocoding generated'
         return msg
+
+    def compute_phase(self, inputdir, outputfile):
+        polarizations = ['VV', 'VH']
+        for polariz in polarizations:
+            realband = gdal.Open(glob(os.path.join(inputdir, '*i_ifg' + '*' + polariz + '*.img'))[0])
+            imagband = gdal.Open(glob(os.path.join(inputdir, 'q_ifg' + '*' + polariz + '*.img'))[0])
+            re = realband.ReadAsArray()
+            im = imagband.ReadAsArray()
+            complex_mat = re + im * 1j
+            phase = np.angle(complex_mat)
+            array2raster(os.path.join(inputdir, os.path.splitext(os.path.basename(inputdir))[0] + '_IFG_' + polariz + '.img'), (0, 0), phase.shape[1], phase.shape[0], phase)
+    
+    def differential_phase(self, ifgpairs):
+        for k in range(len(ifgpairs)):
+            phasecomplete = compute_phase(ifgpairs[k][0])
+            phasediff = compute_phase(ifgpairs[k][1])
+            
+        
+        
+    def array2raster(newRasterfn, rasterOrigin, pixelWidth, pixelHeight, array):
+        cols = array.shape[1]
+        rows = array.shape[0]
+        originX = rasterOrigin[0]
+        originY = rasterOrigin[1]
+    
+        driver = gdal.GetDriverByName('ENVI')
+        outRaster = driver.Create(newRasterfn, cols, rows, 1, gdal.GDT_Float32)
+        outRaster.SetGeoTransform((originX, pixelWidth, 0, originY, 0, pixelHeight))
+        outband = outRaster.GetRasterBand(1)
+        outband.WriteArray(array)
+        outRasterSRS = osr.SpatialReference()
+        outRasterSRS.ImportFromEPSG(4326)
+        outRaster.SetProjection(outRasterSRS.ExportToWkt())
+        outband.FlushCache()
+
