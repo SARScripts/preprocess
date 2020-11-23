@@ -70,6 +70,7 @@ if __name__ == "__main__":
                             orders.Parameter_list.values[i].split(',')[2].replace(' ', '').split('overwrite=')[1], 
                             orders.Parameter_list.values[i].split(',')[3].replace(' ', ''), 
                             orders.Parameter_list.values[i].split(',')[4].split(), 
+                            orders.Parameter_list.values[i].split(',')[5].replace(' ', '').split('calib=')[1], 
                             pathgpt,
                             snappypath,
                             DirProj)
