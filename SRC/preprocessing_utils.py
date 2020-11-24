@@ -553,8 +553,9 @@ class model():
                 #cmath.exp(a))    https://www.askpython.com/python/python-complex-numbers
                 re_result = np.cos(phasesubtr)
                 im_result = np.sin(phasesubtr)
-                # phase_result = 
-                self.array2raster(os.path.join(ifgpairs[k][0], 'ifg_result' + polariz) + '.img', (0, 0), phasesubtr.shape[1], phasesubtr.shape[0], phasesubtr)
+                complex_mat = re_result + im_result * 1j
+                phase_result = np.angle(complex_mat)
+                self.array2raster(os.path.join(ifgpairs[k][0], 'ifg_result' + polariz) + '.img', (0, 0), phase_result.shape[1], phase_result.shape[0], phase_result)
         
     def array2raster(self, newRasterfn, rasterOrigin, pixelWidth, pixelHeight, array):
         cols = array.shape[1]
