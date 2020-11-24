@@ -17,7 +17,7 @@ from zipfile import ZipFile
 import shutil
 import numpy as np
 from scipy.interpolate import griddata
-import gdal, osr
+from osgeo import gdal, osr
 from pyproj import Proj, transform
 
 def listar (a): #Genera una lista de un string separado por comas leído de un config file
