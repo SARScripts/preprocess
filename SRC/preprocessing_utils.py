@@ -75,35 +75,63 @@ class model():
                 meta.append(atr.text)
         return meta
 
-    def unzipgetmeta (self, imagelist):
-        #Unzip if zipfiles in imagelist and fill up ImageUnzip, ImageName, ImageDate columns
-        ImageUnzip = []
+    def unzipassemblygetmeta (self, imagelist):
+        #Unzip if zipfiles, slice assembly if two products for the same date in imagelist and fill up ImagePreprocess, ImageName, ImageDate columns
+        gptxml_file = os.path.join(self.DirProject, 'RES', 'sliceassembly.xml')
+        ImagePreprocess = []
         ImageName = []
         ImageDate = []
+        TimeZipAssem = []
         diroutput = os.path.join(self.diroutorder, '00_data')
         if not os.path.exists(diroutput):
             os.makedirs(diroutput)
+        #Extract dates from filenames
         for i in range(len(imagelist)):
             if os.path.splitext(imagelist.Image[i])[1] == '.zip':
-                #OVERWRITE CONDITION FOR UNZIP FILES
-                if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))) or self.overwrite == '1':
-                    unzipS1 (imagelist.Image[i], diroutput)
-                ImageUnzip.append(os.path.join(diroutput, os.path.splitext(os.path.basename(imagelist.Image[i]))[0]+'.SAFE', 'manifest.safe'))
-                ImageName.append(os.path.splitext(os.path.basename(imagelist.Image[i]))[0])
+                name = os.path.splitext(os.path.basename(imagelist.Image[i]))[0]
             elif os.path.splitext(imagelist.Image[i])[1] == '.safe':
-                if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))) or self.overwrite == '1':
-                    if os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])))):
-                        shutil.rmtree(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i]))))
-                    shutil.copytree(os.path.dirname(imagelist.Image[i]), os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i]))))
-                ImageName.append(os.path.basename(os.path.dirname(imagelist.Image[i])).split('.')[0])
-                ImageUnzip.append(os.path.join(diroutput, os.path.basename(os.path.dirname(imagelist.Image[i])), 'manifest.safe'))
+                name = os.path.basename(os.path.dirname(imagelist.Image[i])).split('.')[0]
             else:
                 print('Image format not supported: ' + imagelist.Image[i])
                 sys.exit()
-            ImageDate.append(ImageName[i][17:25])
-        imagelist['ImageUnzip'] = ImageUnzip
-        imagelist['ImageName'] = ImageName
-        imagelist['ImageDate'] = ImageDate
+            ImageDate.append(name[name.find('T')-8:name.find('T')])
+        imagelist['Date'] = ImageDate
+        uniquedates = list(set(ImageDate))
+        for date in uniquedates:
+            time1 = datetime.now()
+            if ImageDate.count(date) == 1:
+                imagefile = imagelist.iloc[imagelist[imagelist['Date']==date].index[0], imagelist.columns.get_loc('Image')]
+                if os.path.splitext(imagefile)[1] == '.zip':
+                    #OVERWRITE CONDITION FOR UNZIP FILES
+                    if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagefile)))) or self.overwrite == '1':
+                        unzipS1 (imagefile, diroutput)
+                    ImagePreprocess.append(os.path.join(diroutput, os.path.splitext(os.path.basename(imagefile))[0]+'.SAFE', 'manifest.safe'))
+                    ImageOrigin.append(imagefile)
+                    TimeZipAssem.append((datetime.now()-time1).seconds/60)
+                elif os.path.splitext(os.path.basename(imagefile))[1] == '.safe':
+                    if not os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagefile)))) or self.overwrite == '1':
+                        if os.path.isdir(os.path.join(diroutput, os.path.basename(os.path.dirname(imagefile)))):
+                            shutil.rmtree(os.path.join(diroutput, os.path.basename(os.path.dirname(imagefile))))
+                        shutil.copytree(os.path.dirname(imagefile), os.path.join(diroutput, os.path.basename(os.path.dirname(imagefile))))
+                    ImagePreprocess.append(os.path.join(diroutput, os.path.basename(os.path.dirname(imagefile)), 'manifest.safe'))
+                    ImageOrigin.append(imagefile)
+                    TimeZipAssem.append((datetime.now()-time1).seconds/60)
+                else:
+                    print('Image format not supported: ' + imagelist.Image[i])
+                    sys.exit()
+            elif ImageDate.count(date) == 2:
+                #Slice-assembly for joining products
+                assemblist = imagelist[imagelist.Image.str.contains(date)]['Image'].tolist()
+                outputpath = os.path.join(diroutput, date, '_assembl.dim'
+                p = subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+assemblist[0], '-Pinput2='+assemblist[1], '-Ptarget1='+outputpath])
+                ImagePreprocess.append(outputpath)
+                ImageOrigin.append(assemblist)
+            TimeZipAssem.append((datetime.now()-time1).seconds/60)
+            else:
+                print('More than 2 images (not allowed) with date:', date)
+        imagelist['ImageOrigin'] = ImageOrigin
+        imagelist['ImagePreprocess'] = ImagePreprocess
+        imagelist['ImageDate'] = uniquedates
         return imagelist
 
     def run_alignmentlist(self, pairspath, pairsdate, sufix):
@@ -174,9 +202,8 @@ class model():
                         if len(listmerge)==1:
                             #Change output name from IWx to 'merged' in case AOI covers only one subswath
                             shutil.move(listmerge[0], listmerge[-1])
-                            shutil.move(os.path.splitext(listmerge[0])[0]+'.data', os.path.join(tempdir, os.path.splitext(os.path.basename(filePath))[0]+'.data'))
+                            shutil.move(os.path.splitext(listmerge[0])[0]+'.data', os.path.join(tempdir, os.path.splitext(os.path.basename(listmerge[-1]))[0]+'.data'))
                         else:
-                            #OVERWRITE CONDITION FOR MERGE
                             m = self.TOPS_Merge_subswaths(listmerge[:-1], listmerge[-1] + '.dim', self.pathgpt)
                             #Delete/Move temp files
                             del listmerge[-1]    #Remove last element of list (output filename)
@@ -305,7 +332,7 @@ class model():
         #Read the image file
         imagelist = pd.read_csv(self.imagelistfile, sep=';', decimal=',')
         #Unzip and get initial metadata
-        imagelist = self.unzipgetmeta (imagelist)
+        imagelist = self.unzipassemblygetmeta (imagelist)
         gpt_calibration = os.path.join(self.DirProject, 'RES', 'calibration_outputcomplex.xml')
         
         #Calibration of original products

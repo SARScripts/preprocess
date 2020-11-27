@@ -114,6 +114,6 @@ if __name__ == "__main__":
                 Process.epsg = str(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
                 Process.spatialres = str(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
                 #Process.taglist = list(orders.Parameter_list.values[i].split(',')[1].replace("'", "").split())
-                msg = Process.Geocoding()
+                msg = Process.Geocoding(Process.processdf, '')
                 print(msg)
     
