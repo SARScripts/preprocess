@@ -1,5 +1,5 @@
 Order_ID;User;Date_ordering;Process_type;Parameter_list
-1;user1;2020-05-27;alignment_interferogram;/media/guadarrama/PROYECTOS/SAR2CUBE/SARScripts/preprocess/CONF/list_images.csv, /media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_ESD_3secSRTM_clean, overwrite=0, ,1.517 41.714 2.541 41.063
-2;user1;2020-05-27;generate_list; 30, 150
-3;user1;2020-05-27;Multilook; 4, 19
-4;user1;2020-05-27;Geocoding; 32631, 'VV' 'VH'
+1;user1;2020-05-27;alignment_interferogram;/media/guadarrama/PROYECTOS/SAR2CUBE/SARScripts/preprocess/CONF/list_images.csv, /media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_32G, overwrite=0, ,1.517 41.714 2.541 41.063, calib=0
+2;user1;2020-05-27;generate_list; 90, 250
+3;user1;2020-05-27;Multilook; ,
+4;user1;2020-05-27;Geocoding; 32631, 10
