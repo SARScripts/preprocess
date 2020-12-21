@@ -49,7 +49,7 @@ if __name__ == "__main__":
             in_file.close()
             
     sys.path.append(os.path.join(DirProj, 'SRC'))
-    import preprocessing_utils as preproc
+    import preprocessing_utils_mp as preproc
     
     orders = pd.read_csv(OrderFile, sep=';', decimal=',')
     
@@ -57,6 +57,7 @@ if __name__ == "__main__":
     #'alignment_interferogram': list_of_images (essential), output directory (essential), overwrite=[0, 1], masterimage_date (if not specified, master date taken as the closest date to mid-point between first and last date), AOI (if not specified whole scene considered)
     #'generate_pairs_list': list_of_images (essential)
     
+    time1 = datetime.now()
     #A PROCESSING OBJECT IS CREATED FOR THE WHOLE PROCESSING CHAIN
     for i in range(len(orders)):
         #First process will always be alignment of images (coregister)
@@ -77,7 +78,7 @@ if __name__ == "__main__":
             #Parameters check
             if (not os.path.isfile(orders.Parameter_list.values[0].split(',')[0])):
                 sys.exit('Introduce a file with a list of image paths')
-            msg = Process.alignment_ifg ()
+            msg = Process.coregistration_ifg ()
             print(msg)
         if orders.Process_type[i] == 'generate_list':
             if Process.processdf is not None:
@@ -116,4 +117,4 @@ if __name__ == "__main__":
                 #Process.taglist = list(orders.Parameter_list.values[i].split(',')[1].replace("'", "").split())
                 msg = Process.Geocoding(Process.processdf, '')
                 print(msg)
-    
+    print('Processing time: ', (datetime.now()-time1).seconds/60)
