@@ -153,8 +153,8 @@
       <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
       <externalDEMApplyEGM>true</externalDEMApplyEGM>
       <tileExtensionPercent>100</tileExtensionPercent>
-      <outputElevation>false</outputElevation>
-      <outputLatLon>false</outputLatLon>
+      <outputElevation>true</outputElevation>
+      <outputLatLon>true</outputLatLon>
     </parameters>
   </node>
   <node id="TOPSAR-Deburst(2)">
