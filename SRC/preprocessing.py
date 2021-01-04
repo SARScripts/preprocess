@@ -49,7 +49,7 @@ if __name__ == "__main__":
             in_file.close()
             
     sys.path.append(os.path.join(DirProj, 'SRC'))
-    import preprocessing_utils_mp as preproc
+    import preprocessing_utils as preproc
     
     orders = pd.read_csv(OrderFile, sep=';', decimal=',')
     

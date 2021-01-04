@@ -94,7 +94,7 @@ class model():
                 if not os.path.isdir(os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile)))) or self.overwrite == '1':
                     if os.path.isdir(os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile)))):
                         shutil.rmtree(os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile))))
-                    shutil.copytree(os.path.dirname(imagefile), os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile))))
+                    shutil.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         tree(os.path.dirname(imagefile), os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile))))
                 outputpath = os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile)), 'manifest.safe')
                 inputimage = imagefile
                 timeproc = (datetime.now()-time1).seconds/60
@@ -154,9 +154,9 @@ class model():
         subdiroutimag = '01_slc' + self.sufix
         subdiroutifg = '01_ifg' + self.sufix
         nocorrection_tag = '_nocorrect'
-        tempdir = os.path.join(self.diroutorder, subdiroutimag, 'temp')
-        if not os.path.exists(tempdir):
-            os.makedirs(tempdir)
+        self.tempdir = os.path.join(self.diroutorder, subdiroutimag, 'temp')
+        if not os.path.isdir(self.tempdir):
+            os.makedirs(self.tempdir)
         lonmin = self.AOI[0]
         latmax = self.AOI[1]
         lonmax = self.AOI[2]
@@ -209,17 +209,20 @@ class model():
 
                 #Function TOPS Merge is only called when more than 1 subswath is generated. Only IW products supported (max. 3 subswaths)
                 for listmerge in [subswath_list1, subswath_list2, subswath_list3]:
-                    if len(listmerge)==1:
+                    if len(listmerge)<2:
+                        print('AOI does not match scene extents')
+                        sys.exit()
+                    elif len(listmerge)==2:
                         #Change output name from IWx to 'merged' in case AOI covers only one subswath
-                        shutil.move(listmerge[0], listmerge[-1])
-                        shutil.move(os.path.splitext(listmerge[0])[0]+'.data', os.path.join(tempdir, os.path.splitext(os.path.basename(listmerge[-1]))[0]+'.data'))
+                        shutil.move(listmerge[0], listmerge[-1]+'.dim')
+                        shutil.move(os.path.splitext(listmerge[0])[0]+'.data', os.path.splitext(listmerge[-1])[0]+'.data')
                     else:
                         m = self.TOPS_Merge_subswaths(listmerge[:-1], listmerge[-1] + '.dim', self.pathgpt)
                         #Delete/Move temp files
                         del listmerge[-1]    #Remove last element of list (output filename)
                         for filePath in listmerge:
-                            shutil.move(filePath, os.path.join(tempdir, os.path.basename(filePath)))
-                            shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(tempdir, os.path.splitext(os.path.basename(filePath))[0]+'.data'))
+                            shutil.move(filePath, os.path.join(self.tempdir, os.path.basename(filePath)))
+                            shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(self.tempdir, os.path.splitext(os.path.basename(filePath))[0]+'.data'))
             polariz_list1 = sorted(glob(os.path.join(self.diroutorder, subdiroutifg, imagebasename) + '*V*nocorrect*.dim'))
             polariz_list2 = sorted(glob(os.path.join(self.diroutorder, subdiroutifg, imagebasename) + '*V*.dim'))
             polariz_list3 = sorted(glob(os.path.join(self.diroutorder, subdiroutimag, imagebasename) + '*V*.dim'))
@@ -238,8 +241,8 @@ class model():
                     #Delete/Move temp files
                     for filePath in listpol:
                         try:
-                            shutil.move(filePath, os.path.join(tempdir, os.path.basename(filePath)))
-                            shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(tempdir, os.path.splitext(os.path.basename(filePath))[0]+'.data'))
+                            shutil.move(filePath, os.path.join(self.tempdir, os.path.basename(filePath)))
+                            shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(self.tempdir, os.path.splitext(os.path.basename(filePath))[0]+'.data'))
                         except:
                             print("Error while deleting file : ", filePath)
                 else:
@@ -290,9 +293,7 @@ class model():
     def coregistration_ifg (self):
         #Read the image file
         imagelist = pd.read_csv(self.imagelistfile, sep=';', decimal=',')
-        #Unzip and get initial metadata (multithread)
-        #imagelist = self.unzipassemblygetmeta (imagelist)
-        
+       
         #Unzip if zipfiles, slice assembly if two products for the same date in imagelist and fill up ImagePreprocess, ImageName, ImageDate columns
         self.gptxml_unzip = os.path.join(self.DirProject, 'RES', 'sliceassembly.xml')
         ImagePreprocess = []
@@ -315,7 +316,8 @@ class model():
             ImageDate.append(name[name.find('T')-8:name.find('T')])
         imagelist['Date'] = ImageDate
         uniquedates = list(set(ImageDate))
-        num_cores = multiprocessing.cpu_count()-1
+        #num_cores = multiprocessing.cpu_count()-1
+        num_cores = 7
         df_unzipassemb = pd.DataFrame(Parallel(n_jobs=num_cores)(delayed(self.mpUnzipAssembly)(imagelist, ImageDate, uniquedates[i]) for i in range(len(uniquedates))))
         imagelist['ImageOrigin'] = df_unzipassemb[0]
         imagelist['ImagePreprocess'] = df_unzipassemb[1]
@@ -361,7 +363,8 @@ class model():
         pairspath = mountpairs(pd.concat([masterdf['Outputfiles'], slavedf['Outputfiles']], sort=False).reset_index(), 'Outputfiles')
         pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate_str')
         
-        [outputfiles, outputifg1, outputifg2, datelist, outputtimes] = Parallel(n_jobs=num_cores)(delayed(self.pair_coregistration)(pairspath[i], pairsdate[i]) for i in range(len(pairspath)))
+#        [outputfiles, outputifg1, outputifg2, datelist, outputtimes] = Parallel(n_jobs=num_cores)(delayed(self.pair_coregistration)(pairspath[i], pairsdate[i]) for i in range(len(pairspath)))
+        df_coreg = pd.DataFrame(Parallel(n_jobs=num_cores)(delayed(self.pair_coregistration)(pairspath[i], pairsdate[i]) for i in range(len(pairspath))))
 
         #Process differential phase (interferograms with and without flat Earth and topographic corrections)
         phaselist = [os.path.splitext(f)[0] + '.data' for f in outputifg1]
@@ -379,16 +382,9 @@ class model():
         self.processdf['Outputfiles_align'+self.sufix] = outputfiles
         self.processdf['Processing_minutes_align'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
-        #shutil.rmtree(tempdir)
         
         #Generate reference matrices (lat/lon) for further geocoding
-        self.Geocoding(self.processdf['Outputfiles_align'+self.sufix], '')
-        
-        
-        
-        
-        
-        
+        self.Geocoding(self.processdf['Outputfiles_align'+self.sufix])
         return msg
 
     def generate_baselinelist (self):
@@ -527,6 +523,30 @@ class model():
                 np.save(os.path.join(outputdir, band), grid_data)
         return((datetime.now()-time1).seconds/60)
         
+    def backup_filenames(file_list):
+        for file in file_list:
+            shutil.move(file, os.path.join(os.path.splitext(file)[0]+'_bckp'+os.path.splitext(file)[1]))
+    
+    def mergeortholatlon(self, inputfile, outputdir):
+        subswath_list = sorted(glob(os.path.join(self.tempdir, os.path.splitext(inputfile)[0] + '*VH_IW[1-3].dim')))
+        #shutil.copytree(subswath_list, outputdir)
+        refdir = []
+        for subswath in subswath_list:
+            refdir.append(os.path.join(outputdir, os.path.splitext(os.path.basename(subswath))[0]+'.data'))
+            if os.path.exists(refdir[-1]):
+                shutil.rmtree(refdir[-1])
+            shutil.copytree(os.path.splitext(subswath)[0]+'.data', refdir[-1])
+            shutil.copy(subswath, os.path.join(outputdir, os.path.basename(subswath)))
+            i_list = glob(os.path.join(refdir[-1], '*i_ifg*'))
+            q_list = glob(os.path.join(refdir[-1], '*q_ifg*'))
+            backup_filenames(i_list)
+            backup_filenames(q_list)
+            for el in i_list:
+                shutil.copy(os.path.join(refdir[-1], 'orthorectifiedLat'+el[-4:]), el)
+            for el in q_list:
+                shutil.copy(os.path.join(refdir[-1], 'orthorectifiedLon'+el[-4:]), el)
+        self.TOPS_Merge_subswaths (refdir+'.dim', os.path.join(outputdir, 'merge'), self.pathgpt)
+            
     def applyTerrainCorrection(self, inputfile, outputfile, pixelspacing, epsg):
         from snappy import ProductIO, GPF, HashMap
         time1 = datetime.now()
@@ -550,7 +570,7 @@ class model():
         ProductIO.writeProduct(prodTC, outputfile, 'BEAM-DIMAP')
         return datetime.now() - time1
 
-    def Geocoding(self, listinputfiles, pixelspacing):
+    def Geocoding(self, listinputfiles):
         #Generate the baseline list file if it is not generated yet.
         #if not os.path.isfile(os.path.join(self.diroutorder, 'baselines.csv')):
         self.generate_baselinelist()
@@ -560,10 +580,10 @@ class model():
         indexGC = int(self.baselinefiltered[['Perp_Baseline']].idxmax())
         inputfile = listinputfiles[indexGC]
         if os.path.isfile(inputfile):
-            outputfile = os.path.join(self.diroutorder, subdirout, os.path.splitext(os.path.basename(inputfile))[0])
+            outputdir = os.path.join(self.diroutorder, subdirout)
             if not os.path.isdir(outputfile) or self.overwrite == '1':
-                outputtimes[indexGC] = self.applyTerrainCorrection(inputfile, outputfile, pixelspacing, self.epsg)
-            outputfiles[indexGC] = outputfile
+                outputtimes[indexGC] = self.mergeortholatlon(inputfile, outputdir)
+            outputfiles[indexGC] = outputdir
         else:
             msg = 'Geocoding not generated in file ' + listinputfiles[indexGC] + ' not found'
             return msg
