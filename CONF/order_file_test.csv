@@ -1,5 +1,4 @@
 Order_ID;User;Date_ordering;Process_type;Parameter_list
-1;user1;2020-05-27;alignment_interferogram;/media/guadarrama/PROYECTOS/SAR2CUBE/SARScripts/preprocess/CONF/list_images.csv, /media/guadarrama/PROYECTOS/SAR2CUBE/OUTPUT_32G, overwrite=0, ,1.517 41.714 2.541 41.063, calib=0
-2;user1;2020-05-27;generate_list; 90, 250
-3;user1;2020-05-27;Multilook; ,
-4;user1;2020-05-27;Geocoding; 32631, 10
+1;user1;2020-12-03;alignment_interferogram;/home/fmoral@eurac.edu/SAR2CUBE/preprocess/CONF/images_2019_southtyrol_4images.csv, /mnt/large_drive/work_spaces/fmoral/OUTPUT_2019_ASC_STyrol_test4images, overwrite=0, , 10.3736250515922 46.8928102266238 11.437197045721 46.2926414044154, calib=0
+2;user1;2020-12-03;generate_list; , 
+3;user1;2020-12-03;Multilook; , 

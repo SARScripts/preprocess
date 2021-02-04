@@ -1,0 +1,67 @@
+<graph id="Graph">
+  <version>1.0</version>
+  <node id="Read">
+    <operator>Read</operator>
+    <sources/>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>/mnt/large_drive/work_spaces/fmoral/OUTPUT_2019_ASC_STyrol/01_slc/20191228_20190102_SLC_Coregistered.dim</file>
+    </parameters>
+  </node>
+  <node id="Read(2)">
+    <operator>Read</operator>
+    <sources/>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>/mnt/large_drive/work_spaces/fmoral/OUTPUT_2019_ASC_STyrol/01_slc/20191228_20190108_SLC_Coregistered.dim</file>
+    </parameters>
+  </node>
+  <node id="Interferogram">
+    <operator>Interferogram</operator>
+    <sources>
+      <sourceProduct refid="Read"/>
+      <sourceProduct.1 refid="Read(2)"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <subtractFlatEarthPhase>true</subtractFlatEarthPhase>
+      <srpPolynomialDegree>5</srpPolynomialDegree>
+      <srpNumberPoints>501</srpNumberPoints>
+      <orbitDegree>3</orbitDegree>
+      <includeCoherence>false</includeCoherence>
+      <cohWinAz>2</cohWinAz>
+      <cohWinRg>10</cohWinRg>
+      <squarePixel>true</squarePixel>
+      <subtractTopographicPhase>true</subtractTopographicPhase>
+      <demName>SRTM 3Sec</demName>
+      <externalDEMFile/>
+      <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
+      <externalDEMApplyEGM/>
+      <tileExtensionPercent>100</tileExtensionPercent>
+      <outputElevation>true</outputElevation>
+      <outputLatLon>true</outputLatLon>
+    </parameters>
+  </node>
+  <node id="Write">
+    <operator>Write</operator>
+    <sources>
+      <sourceProduct refid="Interferogram"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>/mnt/large_drive/work_spaces/fmoral/SNAP_TESTS/20190102_20190108_SLC_Coregistered_Ifg.dim</file>
+      <formatName>BEAM-DIMAP</formatName>
+    </parameters>
+  </node>
+  <applicationData id="Presentation">
+    <Description/>
+    <node id="Read">
+      <displayPosition x="25.0" y="13.0"/>
+    </node>
+    <node id="Read(2)">
+      <displayPosition x="28.0" y="229.0"/>
+    </node>
+    <node id="Interferogram">
+      <displayPosition x="233.0" y="123.0"/>
+    </node>
+    <node id="Write">
+      <displayPosition x="456.0" y="125.0"/>
+    </node>
+  </applicationData>
+</graph>

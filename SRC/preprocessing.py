@@ -112,9 +112,9 @@ if __name__ == "__main__":
         
         if orders.Process_type[i] == 'Geocoding':
             if Process.processdf is not None:
-                Process.epsg = str(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
-                Process.spatialres = str(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
-                #Process.taglist = list(orders.Parameter_list.values[i].split(',')[1].replace("'", "").split())
-                msg = Process.Geocoding(Process.processdf, '')
+                Process.epsgout = str(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
+                Process.spatialres = float(orders.Parameter_list.values[i].split(',')[2].replace(' ', ''))
+                gcdatelist = list(orders.Parameter_list.values[i].split(',')[0].replace("'", "").split())
+                msg = Process.applydatelistGeocoding(gcdatelist)
                 print(msg)
     print('Processing time: ', (datetime.now()-time1).seconds/60)

@@ -154,7 +154,7 @@
       <externalDEMApplyEGM>true</externalDEMApplyEGM>
       <tileExtensionPercent>100</tileExtensionPercent>
       <outputElevation>true</outputElevation>
-      <outputLatLon>true</outputLatLon>
+      <outputLatLon>$input6</outputLatLon>
     </parameters>
   </node>
   <node id="TOPSAR-Deburst(2)">
