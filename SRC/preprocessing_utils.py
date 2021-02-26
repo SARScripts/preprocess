@@ -38,7 +38,7 @@ def mountpairs (dflist, field): #Pairs combining the first element with the rest
     return pairs
 
 class model():
-    def __init__(self, process_type, imagelistfile, diroutorder, overwrite, datemaster, AOI, calib, pathgpt, snappypath, DirProject):
+    def __init__(self, process_type, imagelistfile, diroutorder, overwrite, datemaster, AOI, calib, pathgpt, snappypath, DirProject, num_cores):
         self.process_type = process_type
         self.imagelistfile = imagelistfile
         self.datemaster = datemaster
@@ -68,10 +68,8 @@ class model():
         self.baselinefiltered = pd.DataFrame()
         self.logfilename = 'process_log.csv'
         self.epsgin = '4326'
-        #self.epsgout = 
-        #self.spatialres = 10
         #Number of cores fits the ratio between RAM memory and 23 Gb/core (need for coregistration)
-        self.num_cores = 7
+        self.num_cores = num_cores
 
         if not os.path.exists(self.diroutorder):
             os.makedirs(self.diroutorder)            
@@ -203,8 +201,15 @@ class model():
             sys.exit()
         imagebasename = dates[0] + '_' + slavename + output_sufix
         if not os.path.isfile(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim')) or self.overwrite == '1':
+            #Check and delete temporary files 
+            # trashfiles = sorted(glob(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename)))
+            # trashfiles.append(sorted(glob(os.path.join(self.diroutorder, self.subdiroutifg, imagebasename))))
+            # for f in trashfiles:
+            #     os.remove(f)
+            #Go through polarizations
             for polariz in input5:
                 output1 = imagebasename + '_' + polariz
+                #Generate coregistration for every subswath
                 for k in range(len(input3)):
                     outputfile1 = os.path.join(self.diroutorder, self.subdiroutifg, output1 + '_' + input3[k] + '.dim')
                     outputfile2 = os.path.join(self.diroutorder, self.subdiroutifg, output1 + '_' + input3[k] + nocorrection_tag + '.dim')
@@ -271,6 +276,10 @@ class model():
                     #Change output name in case the product has only one polarization
                     shutil.move(listpol[0], outputfile)
                     shutil.move(os.path.splitext(listpol[0])[0]+'.data', os.path.splitext(outputfile)+'.data')
+            #Clean/rename temp files
+            self.cleaning_coreg(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim'))
+            #Compute differential phase
+            self.differential_phase([os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.data'), os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '_nocorrect.data')]) 
         if os.path.isfile(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim')):
             outputfiles.append(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim'))
             outputifg1.append(os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.dim'))
@@ -278,7 +287,7 @@ class model():
         else:
             outputfiles.append('Not generated')
         outputtimes.append((datetime.now()-time1).seconds/60)
-        datelist.append(dates[1])
+        datelist.append(dates[1])        
         return [outputfiles, outputifg1, outputifg2, datelist, outputtimes]
         
     def stack_polariz (self, imagepathlist, outputfile, pathgpt):
@@ -369,7 +378,6 @@ class model():
         self.processdf = self.processdf.sort_values(by=['ImageDate'])
         #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, RUN ALIGNMENT PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
         #Identify master image row and set up slave images dataframe
-        #if not any (self.processdf['ImageDate'].str.contains(self.datemaster)):
         if not any (self.processdf['ImageDate'] == self.datemaster):
             datelist = list(self.processdf.ImageDate.sort_values().astype(int)/10**9)
             self.datemaster = pd.to_datetime(datelist[min(range(len(datelist)), key = lambda i: abs(datelist[i]-(datelist[-1]+datelist[0])/2))], unit='s', origin='unix').strftime('%Y%m%d')
@@ -377,10 +385,10 @@ class model():
         #Master image is reindexed to the top of the df
         masterdf = self.processdf[self.processdf['ImageDate_str'] == self.datemaster]
         slavedf = self.processdf.copy()
-        #slavedf = slavedf.drop(slavedf[self.processdf['ImageDate'] == datetime.strptime(self.datemaster, '%Y%m%d')].index)
         pairspath = mountpairs(pd.concat([masterdf['Outputfiles'], slavedf['Outputfiles']], sort=False).reset_index(), 'Outputfiles')
         pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate_str')
 #        [outputfiles, outputifg1, outputifg2, datelist, outputtimes] = Parallel(n_jobs=num_cores)(delayed(self.pair_coregistration)(pairspath[i], pairsdate[i]) for i in range(len(pairspath)))
+        #Coregistration process        
         df_coreg = pd.DataFrame(Parallel(n_jobs=self.num_cores)(delayed(self.pair_coregistration)(pairspath[i], pairsdate[i]) for i in range(len(pairspath))))             
         outputfiles = [item[0] for item in df_coreg[0]]
         datelist = [item[0] for item in df_coreg[3]]
@@ -388,48 +396,38 @@ class model():
         #Get position of master and add master record
         self.processdf.reset_index(drop=True, inplace=True) 
         masterid = self.processdf[self.processdf['ImageDate_str']==self.datemaster].index[0]
-        #datelist.insert(masterid, self.datemaster)
-        #outputfiles.insert(masterid, os.path.join(self.diroutorder, '01_slc/'+self.datemaster+'_'+self.datemaster+'_SLC_Coregistered.dim'))
-        #outputtimes.insert(masterid, '0')
         self.processdf['Outputfiles_align'+self.sufix] = outputfiles
-        self.cleaning_coreg()
-        #Generate reference matrices (lat/lon) for further geocoding
-        self.generateGeocoding()
-        #Process differential phase (interferograms with and without flat Earth and topographic corrections)
-        #phaselist = [os.path.splitext(f)[0] + '.data' for f in df_coreg[1]]
-        #phasedifflist = [os.path.splitext(f)[0] + '.data' for f in df_coreg[2]]
-        #ifgpairs = [(phaselist[j], phasedifflist[j]) for j in range(len(phaselist))]
-        #self.differential_phase(ifgpairs)
         #Fill processing info into df
         self.processdf['Outputfiles_align'+self.sufix] = outputfiles
         self.processdf['Processing_minutes_align'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
+        #Generate reference matrices (lat/lon) for further geocoding
+        self.generateGeocoding()
         msg = 'Coregistration generated'
         return msg
 
-    def cleaning_coreg(self):
+    def cleaning_coreg(self, imagecoreg):
         #Go through the coregistered images and change file names, remove master image...
-        for imagecoreg in self.processdf['Outputfiles_align'+self.sufix]:
-            imageref = os.path.splitext(os.path.basename(imagecoreg))[0]
-            imagedir = os.path.splitext(imagecoreg)[0] + '.data/'
-            ifgdir = os.path.join(self.diroutorder, self.subdiroutifg, imageref+'.data')
-            ifgnocorrectdir = os.path.join(self.diroutorder, self.subdiroutifg, imageref+'_nocorrect.data')
-            deletelist = glob(os.path.join(imagedir, '*mst*'))
-            for file in deletelist:
-                os.remove(file)
-            changenamelist = glob(os.path.join(imagedir, '*slv*'))
-            for file in changenamelist:
-                os.rename(file, file.replace('_slv1', ''))
-                filetemp = file.replace('_slv1', '')
-                os.rename(filetemp, filetemp.replace(filetemp[filetemp.find('_slv3'):filetemp.find('_slv3')+15], ''))
-            for fold in [ifgdir, ifgnocorrectdir]:
-                for file in glob(os.path.join(fold, '*.*')):
-                    filetemp = file
-                    if 'slv' in file:
-                        filetemp = file.replace(file[file.find('_slv'):file.find('_slv')+15], '')
-                    filedest = filetemp.replace(filetemp[filetemp.find('_ifg_')+8:filetemp.find('_ifg_')+18], '')
-                    os.rename(file, filedest)
-                    
+        imageref = os.path.splitext(os.path.basename(imagecoreg))[0]
+        imagedir = os.path.splitext(imagecoreg)[0] + '.data/'
+        ifgdir = os.path.join(self.diroutorder, self.subdiroutifg, imageref+'.data')
+        ifgnocorrectdir = os.path.join(self.diroutorder, self.subdiroutifg, imageref+'_nocorrect.data')
+        deletelist = glob(os.path.join(imagedir, '*mst*'))
+        for file in deletelist:
+            os.remove(file)
+        changenamelist = glob(os.path.join(imagedir, '*slv*'))
+        for file in changenamelist:
+            os.rename(file, file.replace('_slv1', ''))
+            filetemp = file.replace('_slv1', '')
+            os.rename(filetemp, filetemp.replace(filetemp[filetemp.find('_slv3'):filetemp.find('_slv3')+15], ''))
+        for fold in [ifgdir, ifgnocorrectdir]:
+            for file in glob(os.path.join(fold, '*.*')):
+                filetemp = file
+                if 'slv' in file:
+                    filetemp = file.replace(file[file.find('_slv'):file.find('_slv')+15], '')
+                filedest = filetemp.replace(filetemp[filetemp.find('_ifg_')+8:filetemp.find('_ifg_')+18], '')
+                os.rename(file, filedest)
+                
     def generate_baselinelist (self):
         self.baselinelist = self.processdf.copy()
         #Master record removed (no baseline between the same image as master and slave)
@@ -437,8 +435,8 @@ class model():
         self.baselinelist.reset_index(drop=True, inplace=True) 
         self.baselinelist['Master'] = self.datemaster
         self.baselinelist['Slave'] = self.baselinelist['ImageDate_str']
-        self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.baselinelist['Outputfiles_align'][i], 'Perp Baseline')[1] for i in range(len(self.baselinelist))]
-        self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.baselinelist['Outputfiles_align'][i], 'Temp Baseline')[1] for i in range(len(self.baselinelist))]
+        self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.baselinelist['Outputfiles_align'+self.sufix][i], 'Perp Baseline')[1] for i in range(len(self.baselinelist))]
+        self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.baselinelist['Outputfiles_align'+self.sufix][i], 'Temp Baseline')[1] for i in range(len(self.baselinelist))]
         fieldlist = []
         #Delete fields not needed
         for tag in ['ImageDate', 'Outputfiles', 'Processing_minutes']:
@@ -449,9 +447,10 @@ class model():
         waninglist = self.baselinelist.copy()
         while len(waninglist)>1:
             for i in range(len(waninglist)-1):
-                perp = float(waninglist['Perp_Baseline'][0]) - float(waninglist['Perp_Baseline'][i+1])
-                temp = float(waninglist['Temp_Baseline'][0]) - float(waninglist['Temp_Baseline'][i+1])
-                self.baselinelist.loc[len(self.baselinelist)] = [str(waninglist['Slave'][0]), str(waninglist['Slave'][i+1]), perp, temp]
+                perp = round(float(waninglist['Perp_Baseline'][0]) - float(waninglist['Perp_Baseline'][i+1]), 2)
+                temp = int(round(float(waninglist['Temp_Baseline'][0]) - float(waninglist['Temp_Baseline'][i+1]), 0))
+                #self.baselinelist.loc[len(self.baselinelist)] = [str(waninglist['Slave'][0]), str(waninglist['Slave'][i+1]), perp, temp]
+                self.baselinelist = self.baselinelist.append(pd.Series([str(waninglist['Slave'][0]), str(waninglist['Slave'][i+1]), perp, temp]), ignore_index=True)
             waninglist = waninglist.drop(0)
             waninglist.reset_index(drop=True, inplace=True)
         #Filter table with maxbasetemp and maxbaseperp
@@ -520,42 +519,24 @@ class model():
     
     def applydatelistGeocoding(self, gcdatelist):
         #Check if coregistration geocoding has been generated
-        if not (os.path.isfile(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLat_ML.img')) and os.path.isfile(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLon_ML.img'))):
+        if not (os.path.isfile(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLat.img')) and os.path.isfile(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLon.img'))):
             self.generateGeocoding()
         outputdir = os.path.join(self.diroutorder, self.subdiroutgc)
         for date in gcdatelist:
-            inputfilegc = self.processdf[self.processdf['ImageDate_str'] == date]['Outputfiles_ML'][0]
+            inputfilegc = self.processdf[self.processdf['ImageDate_str'] == date]['Outputfiles_align'+self.sufix].tolist()[0]
             #outputdirgc = os.path.join(outputdir, gcdatelist[i]+'_ifg_gc.dim')
             timegc = self.applyGeocoding(inputfilegc, outputdir, date)
         
     def applyGeocoding(self, inputfile, outputdir, date):
         time1 = datetime.now()
         #Load data
-        #prod = ProductIO.readProduct(inputfile)
         inputfolder = os.path.splitext(inputfile)[0] + '.data'
-        lat = gdal.Open(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLat_ML.img'))
-        lon = gdal.Open(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLon_ML.img'))
-        #lon = prod.getBand('orthorectifiedLon')
-        #w = prod.getSceneRasterWidth()
-        #h = prod.getSceneRasterHeight()
-        #array = np.zeros((w, h), dtype=np.float32)
+        lat = gdal.Open(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLat.img'))
+        lon = gdal.Open(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLon.img'))
         lat_arr = lat.ReadAsArray()
-        #lat_arr = np.asarray(latpixels)
-        #lat_arr.shape = (h, w)
-        #lonpixels = lon.readPixels(0, 0, w, h, array)
         lon_arr = lon.ReadAsArray()
-        #lon_arr.shape = (h, w)
-
-
         #Check for bands for geocoding and resampling
         bandlist = glob(inputfolder+'/*.img')
-        # try:
-        #     for tag in taglist:
-        #         for band in list(prod.getBandNames()):
-        #             if tag in band:
-        #                 bandlist.append(band)
-        # except:
-        #     print('No tags')
         if bandlist is not None:
             #Adjust to the Sentinel 2 grid
             ulxgrid, ulygrid, lrxgrid, lrygrid = self.check_S2grid(np.min(self.x), np.max(self.y), np.max(self.x), np.min(self.y))
@@ -566,7 +547,6 @@ class model():
             grid_x, grid_y = np.meshgrid(x1,y1)
             for band in bandlist:
                 data_getband = gdal.Open(band)
-                #data_pixels = data_getband.readPixels(0, 0, w, h, array)
                 data_arr = data_getband.ReadAsArray()
                 grid_data = griddata((self.x.flatten(), self.y.flatten()), data_arr.flatten(), (grid_x, grid_y), method='nearest')
                 np.save(os.path.join(outputdir, date, os.path.basename(band)), grid_data)
@@ -588,7 +568,7 @@ class model():
                 self.s2gridrefx = {ep:s2grid[s2grid['epsg']==ep].iloc[0]['ul_x'] for ep in epsglist}
                 self.s2gridrefy = {ep:s2grid[s2grid['epsg']==ep].iloc[0]['ul_y'] for ep in epsglist}
             else:
-                print('Sentinel grid file provided not coherent with coordinates ')
+                print('Sentinel 2 grid file provided not coherent with coordinates ')
                 sys.exit()
         if self.s2gridrefx[int(self.epsgout)] > ulx:
             ulxgrid = self.s2gridrefx[int(self.epsgout)] - (int((self.s2gridrefx[float(self.epsgout)] - ulx) / self.spatialres)*self.spatialres) + self.spatialres
@@ -635,21 +615,25 @@ class model():
             
     def generateGeocoding(self):
         from snappy import ProductIO, GPF, HashMap
-        #Generate the baseline list file if it is not generated yet.
         self.generate_baselinelist()
         gptxml_file = os.path.join(self.DirProject, 'RES', 'ifg_ortholatlon.xml')
         indexGC = int(self.baselinefiltered[['Perp_Baseline']].idxmax())
-        inputfile1 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Master']]['Outputfiles_ML'].tolist()[0]
-        inputfile2 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Slave']]['Outputfiles_ML'].tolist()[0]
+        inputfile1 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Master']]['Outputfiles_align'+self.sufix].tolist()[0]
+        inputfile2 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Slave']]['Outputfiles_align'+self.sufix].tolist()[0]
         date1 = self.baselinefiltered.loc[indexGC]['Master']
         date2 = self.baselinefiltered.loc[indexGC]['Slave']
         outputdir = os.path.join(self.diroutorder, self.subdiroutgc)
-        outputfile = os.path.join(outputdir, 'ifg_gc_ML.dim')
+        outputfile = os.path.join(outputdir, 'ifg_gc_'+date1+'_'+date2+'.dim')
         subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+inputfile1, '-Pinput2='+inputfile2, '-Ptarget1='+outputfile])
-        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLon.img'), os.path.join(outputdir, 'orthorectifiedLon_ML.img'))
-        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLon.hdr'), os.path.join(outputdir, 'orthorectifiedLon_ML.hdr'))
-        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLat.img'), os.path.join(outputdir, 'orthorectifiedLat_ML.img'))
-        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLat.hdr'), os.path.join(outputdir, 'orthorectifiedLat_ML.hdr'))
+        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLon.img'), os.path.join(outputdir, 'orthorectifiedLon.img'))
+        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLon.hdr'), os.path.join(outputdir, 'orthorectifiedLon.hdr'))
+        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLat.img'), os.path.join(outputdir, 'orthorectifiedLat.img'))
+        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLat.hdr'), os.path.join(outputdir, 'orthorectifiedLat.hdr'))
+        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'tie_point_grids', 'incident_angle.img'), os.path.join(outputdir, 'incident_angle.img'))
+        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'tie_point_grids', 'incident_angle.hdr'), os.path.join(outputdir, 'incident_angle.hdr'))
+        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.img'), os.path.join(outputdir, 'elevation.img'))
+        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.hdr'), os.path.join(outputdir, 'elevation.hdr'))
+        
         #If ortho latlon numpy matrices needed
         prod = ProductIO.readProduct(outputfile)
         ortho_lat = prod.getBand('orthorectifiedLat')
@@ -659,8 +643,8 @@ class model():
         array = np.zeros((w, h), dtype=np.float32)
         latpix = ortho_lat.readPixels(0, 0, w, h, array)
         lonpix = ortho_lon.readPixels(0, 0, w, h, array)
-        np.save(os.path.join(outputdir, 'lat_ML'), latpix)
-        np.save(os.path.join(outputdir, 'lon_ML'), lonpix)
+        np.save(os.path.join(outputdir, 'lat'), latpix)
+        np.save(os.path.join(outputdir, 'lon'), lonpix)
         #Management of CRS, by default UTM, zone according to longitude
         try:
             print(self.epsgout)
@@ -672,19 +656,38 @@ class model():
                 south = True
             crs = CRS.from_dict({'proj': 'utm', 'zone': zone, 'south': south})
             self.epsgout = crs.to_authority()[1]
+        if not hasattr(self, 'spatialres'):
+            self.spatialres = 10
         #Resampling
         inProj = 'epsg:'+self.epsgin
         outProj = 'epsg:'+self.epsgout
         transformer = Transformer.from_crs(inProj, outProj)
         self.x, self.y = transformer.transform(lonpix,latpix)
-        np.save(os.path.join(outputdir, 'x_ML'), self.x)
-        np.save(os.path.join(outputdir, 'y_ML'), self.y)
+        np.save(os.path.join(outputdir, 'x'), self.x)
+        np.save(os.path.join(outputdir, 'y'), self.y)
+        
+        #Incident angle
+        #tiePoints = list(prod.getTiePointGridNames())
+        inc = prod.getRasterDataNode('incident_angle')
+        theta = np.zeros((h, w), dtype=np.float32)
+        theta = inc.readPixels(0, 0, w, h, theta)
+        np.save(os.path.join(outputdir, 'incid_angle'), theta)
+        ProductIO.writeProduct(theta, os.path.join(outputdir, 'incident_angle.img'), None)
+        #Adjust to the Sentinel 2 grid
+        ulxgrid, ulygrid, lrxgrid, lrygrid = self.check_S2grid(np.min(self.x), np.max(self.y), np.max(self.x), np.min(self.y))
+        wout = int((lrxgrid - ulxgrid) / self.spatialres)
+        hout = int((ulygrid - lrygrid) / self.spatialres)
+        x1 = np.linspace(lrxgrid, ulxgrid, wout)
+        y1 = np.linspace(lrygrid, ulygrid, hout)
+        grid_x, grid_y = np.meshgrid(x1,y1)
+        # inci_grid = griddata((self.x.flatten(), self.y.flatten()), theta.flatten(), (grid_x, grid_y), method='nearest')
+        # np.save(os.path.join(outputdir, 'incid_angle_EPSG'+self.epsgout, inci_grid))   
         msg = 'Geocoding generated'
         return msg
 
     def compute_phase(self, inputdir, polariz, outputfile):
-            realband = gdal.Open(glob(os.path.join(inputdir, '*i_ifg' + '*' + polariz + '*.img'))[0])
-            imagband = gdal.Open(glob(os.path.join(inputdir, 'q_ifg' + '*' + polariz + '*.img'))[0])
+            realband = gdal.Open(glob(os.path.join(inputdir, 'i_ifg_' + polariz + '*.img'))[0])
+            imagband = gdal.Open(glob(os.path.join(inputdir, 'q_ifg_' + polariz + '*.img'))[0])
             realarr = realband.ReadAsArray()
             imagarr = imagband.ReadAsArray()
             complex_mat = realarr + imagarr * 1j
@@ -692,21 +695,23 @@ class model():
             self.array2raster(outputfile + '_'+ polariz + '.img', (0, 0), phase.shape[1], phase.shape[0], phase)
             return phase
     
-    def differential_phase(self, ifgpairs):
-        for k in range(len(ifgpairs)):
-            polarizations = ['VV', 'VH']
-            for polariz in polarizations:
-                phasecomplete = self.compute_phase(ifgpairs[k][0], polariz, os.path.join(ifgpairs[k][0], 'ifg_compl'))
-                phasediff = self.compute_phase(ifgpairs[k][1], polariz, os.path.join(ifgpairs[k][0], 'ifg_diff'))
-                phasesubtr = phasediff-phasecomplete
-                #eit= cost+isint     https://www.math.wisc.edu/~angenent/Free-Lecture-Notes/freecomplexnumbers.pdf
-                #cmath.exp(a))    https://www.askpython.com/python/python-complex-numbers
-                re_result = np.cos(phasesubtr)
-                im_result = np.sin(phasesubtr)
-                complex_mat = re_result + im_result * 1j
-                phase_result = np.angle(complex_mat)
-                self.array2raster(os.path.join(ifgpairs[k][0], 'ifg_result' + polariz) + '.img', (0, 0), phase_result.shape[1], phase_result.shape[0], phase_result)
-        
+    def differential_phase(self, ifgpair):
+        time1 = datetime.now()
+        polarizations = ['VV', 'VH']
+        for polariz in polarizations:
+            phasecomplete = self.compute_phase(ifgpair[0], polariz, os.path.join(os.path.splitext(ifgpair[0])[0] + '_ifg_compl.data'))
+            phasediff = self.compute_phase(ifgpair[1], polariz, os.path.join(os.path.splitext(ifgpair[0])[0] + '_ifg_diff.data'))
+            phasesubtr = phasediff - phasecomplete
+            #eit= cost+isint     https://www.math.wisc.edu/~angenent/Free-Lecture-Notes/freecomplexnumbers.pdf
+            #cmath.exp(a))    https://www.askpython.com/python/python-complex-numbers
+            re_result = np.cos(phasesubtr)
+            im_result = np.sin(phasesubtr)
+            complex_mat = re_result + im_result * 1j
+            phase_result = np.angle(complex_mat)
+            output = os.path.join(ifgpair[0], 'ifg_result' + polariz).replace('01_ifg', '01_slc') + '.img'
+            self.array2raster(output, (0, 0), phase_result.shape[1], phase_result.shape[0], phase_result)
+        return(output ,(datetime.now()-time1).seconds/60)
+    
     def array2raster(self, newRasterfn, rasterOrigin, pixelWidth, pixelHeight, array):
         cols = array.shape[1]
         rows = array.shape[0]

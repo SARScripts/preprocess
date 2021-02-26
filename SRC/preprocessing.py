@@ -3,7 +3,6 @@
 """
 Created on Wed May 27 23:21:09 2020
 
-@author: paco.moral
 """
 
 import sys
@@ -39,12 +38,9 @@ if __name__ == "__main__":
             if "SNAPPY_FOLDER" in line:
                 snappypath = controlslash(line.split('=')[1].strip())
                 print ("SNAPPY_FOLDER:" + snappypath)
-
-                #ASSESS WHETHER CACHE AND CPU ARE VARIABLES TO TAKE INTO ACCOUNT
-            # if "CACHE" in line:
-            #     CACHE = line.split('=')[1].strip()
-            # if "CPU" in line:
-            #     CPU = line.split('=')[1].strip()
+            if "NUMBER_CORES" in line:
+                num_cores = controlslash(line.split('=')[1].strip())
+                print ("NUMBER_CORES:" + num_cores)
     finally:
             in_file.close()
             
@@ -74,7 +70,8 @@ if __name__ == "__main__":
                             orders.Parameter_list.values[i].split(',')[5].replace(' ', '').split('calib=')[1], 
                             pathgpt,
                             snappypath,
-                            DirProj)
+                            DirProj,
+                            int(num_cores))
             #Parameters check
             if (not os.path.isfile(orders.Parameter_list.values[0].split(',')[0])):
                 sys.exit('Introduce a file with a list of image paths')
