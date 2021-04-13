@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Apr 23 17:32:28 2020
-
-"""
-
 
 import sys
 import os
@@ -21,6 +16,8 @@ from osgeo import gdal, osr
 from pyproj import Proj, transform, Transformer, CRS
 from joblib import Parallel, delayed
 import multiprocessing
+import math
+
 
 def listar (a): #Genera una lista de un string separado por comas leído de un config file
     if pd.isnull(a):
@@ -38,7 +35,7 @@ def mountpairs (dflist, field): #Pairs combining the first element with the rest
     return pairs
 
 class model():
-    def __init__(self, process_type, imagelistfile, diroutorder, overwrite, datemaster, AOI, calib, pathgpt, snappypath, DirProject, num_cores):
+    def __init__(self, process_type, imagelistfile, diroutorder, overwrite, datemaster, AOI, calib, pathgpt, snappypath, snaphupath, snaphuconf, DirProject, num_cores):
         self.process_type = process_type
         self.imagelistfile = imagelistfile
         self.datemaster = datemaster
@@ -50,7 +47,7 @@ class model():
         self.diroutorder = diroutorder
         self.overwrite = overwrite
         self.calib = str(calib)
-        if self.calib == '1':
+        if self.calib != '0':
             self.sufix = '_calib'
         else:
             self.sufix = ''
@@ -60,6 +57,8 @@ class model():
         self.subdiroutgc = '03_gc'
         self.pathgpt = pathgpt
         self.snappypath = snappypath
+        self.snaphupath = snaphupath
+        self.snaphuconf = snaphuconf
         self.DirProject = DirProject
         self.processdf = pd.DataFrame()
         self.baselinelist = pd.DataFrame()
@@ -68,9 +67,9 @@ class model():
         self.baselinefiltered = pd.DataFrame()
         self.logfilename = 'process_log.csv'
         self.epsgin = '4326'
-        #Number of cores fits the ratio between RAM memory and 23 Gb/core (need for coregistration)
+        self.polarizphaseunwrap = 'VV'
+        #Number of cores should fit the ratio between RAM memory and 23 Gb/core (need for coregistration)
         self.num_cores = num_cores
-
         if not os.path.exists(self.diroutorder):
             os.makedirs(self.diroutorder)            
         sys.path.append(self.snappypath)
@@ -88,7 +87,6 @@ class model():
                 if atr.get('name') == tag:
                     meta.append(atr.text)
         return meta
-
 
     def mpUnzipAssembly(self, imagelist, ImageDate, date):
         time1 = datetime.now()
@@ -126,40 +124,8 @@ class model():
             print('More than 2 images (not allowed) with date:', date)
         return (inputimage, outputpath, timeproc)
 
-    # def unzipassemblygetmeta (self, imagelist):
-    #     #Unzip if zipfiles, slice assembly if two products for the same date in imagelist and fill up ImagePreprocess, ImageName, ImageDate columns
-    #     self.gptxml_unzip = os.path.join(self.DirProject, 'RES', 'sliceassembly.xml')
-    #     ImagePreprocess = []
-    #     ImageName = []
-    #     ImageDate = []
-    #     ImageOrigin = []
-    #     TimeZipAssem = []
-    #     self.diroutputzip = os.path.join(self.diroutorder, '00_data')
-    #     if not os.path.exists(self.diroutputzip):
-    #         os.makedirs(self.diroutputzip)
-    #     #Extract dates from filenames
-    #     for i in range(len(imagelist)):
-    #         if os.path.splitext(imagelist.Image[i])[1] == '.zip':
-    #             name = os.path.splitext(os.path.basename(imagelist.Image[i]))[0]
-    #         elif os.path.splitext(imagelist.Image[i])[1] == '.safe':
-    #             name = os.path.basename(os.path.dirname(imagelist.Image[i])).split('.')[0]
-    #         else:
-    #             print('Image format not supported: ' + imagelist.Image[i])
-    #             sys.exit()
-    #         ImageDate.append(name[name.find('T')-8:name.find('T')])
-    #     imagelist['Date'] = ImageDate
-    #     uniquedates = list(set(ImageDate))
-    #     num_cores = multiprocessing.cpu_count()-1
-    #     df_unzipassemb = pd.DataFrame(Parallel(n_jobs=num_cores)(delayed(self.mp_unzip_assembly)(imagelist, ImageDate, uniquedates[i]) for i in range(len(uniquedates))))
-    #     imagelist['ImageOrigin'] = df_unzipassemb[0]
-    #     imagelist['ImagePreprocess'] = df_unzipassemb[1]
-    #     imagelist['TimeunzipAsseml'] = df_unzipassemb[2]
-    #     imagelist['ImageDate'] = uniquedates
-    #     return imagelist
-
     def pair_coregistration(self, paths, dates, ortholatlon=0):
-        self.gptxml_coreg = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_Interferogram_ESD_Polariz_wkt_outimage_flatearth_topophase.xml')
-        gptsubset_master = os.path.join(self.DirProject, 'RES', 'applyAOI_master_convertDIMAP.xml')
+        self.gptxml_coreg = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_ifg_ESD_Polariz_wkt.xml')
         output_sufix = '_Coregistered'
         nocorrection_tag = '_nocorrect'
         if ortholatlon == 0:
@@ -202,10 +168,14 @@ class model():
         imagebasename = dates[0] + '_' + slavename + output_sufix
         if not os.path.isfile(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim')) or self.overwrite == '1':
             #Check and delete temporary files 
-            # trashfiles = sorted(glob(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename)))
-            # trashfiles.append(sorted(glob(os.path.join(self.diroutorder, self.subdiroutifg, imagebasename))))
-            # for f in trashfiles:
-            #     os.remove(f)
+            searchfolders = [os.path.join(self.diroutorder, self.subdiroutslc), os.path.join(self.diroutorder, self.subdiroutifg), self.tempdir] 
+            for sfold in searchfolders:
+                trashfiles = sorted(glob(sfold + '/*' + imagebasename + '*'))
+                for f in trashfiles:
+                    if os.path.isfile(f):
+                        os.remove(f)
+                    else:
+                        shutil.rmtree(f)
             #Go through polarizations
             for polariz in input5:
                 output1 = imagebasename + '_' + polariz
@@ -214,7 +184,6 @@ class model():
                     outputfile1 = os.path.join(self.diroutorder, self.subdiroutifg, output1 + '_' + input3[k] + '.dim')
                     outputfile2 = os.path.join(self.diroutorder, self.subdiroutifg, output1 + '_' + input3[k] + nocorrection_tag + '.dim')
                     outputfile3 = os.path.join(self.diroutorder, self.subdiroutslc, output1 + '_' + input3[k] + 'im.dim')
-                    #OVERWRITE CONDITION FOR SUBSWATH GENERATION
                     try:
                         p = subprocess.check_output([self.pathgpt, self.gptxml_coreg, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4, '-Pinput5='+polariz,'-Pinput6='+input6,'-Ptarget1='+outputfile1,'-Ptarget2='+outputfile2 ,'-Ptarget3='+outputfile3])
                     except:
@@ -276,10 +245,15 @@ class model():
                     #Change output name in case the product has only one polarization
                     shutil.move(listpol[0], outputfile)
                     shutil.move(os.path.splitext(listpol[0])[0]+'.data', os.path.splitext(outputfile)+'.data')
-            #Clean/rename temp files
-            self.cleaning_coreg(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim'))
             #Compute differential phase
             self.differential_phase([os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.data'), os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '_nocorrect.data')]) 
+        else:
+            #Compute differential phase if not exists
+            if not os.path.isfile(os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.data', 'ifg_result_unwrap').replace('01_ifg', '01_slc') + '.img') or self.overwrite == '1':
+                 self.differential_phase([os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.data'), os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '_nocorrect.data')]) 
+        #Clean/rename temp files
+        self.cleaning_coreg(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim'))        
+        #Store production data in table
         if os.path.isfile(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim')):
             outputfiles.append(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim'))
             outputifg1.append(os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.dim'))
@@ -352,20 +326,18 @@ class model():
         self.processdf['TimeunzipAsseml'] = df_unzipassemb[2]
         self.processdf['ImageDate'] = uniquedates
         #Calibration of original products
-        gpt_calibration = os.path.join(self.DirProject, 'RES', 'calibration_outputcomplex.xml')
         outputfiles = []
         outputtimes = []
-        if self.calib == '1':
-            for i in range(len(self.processdf)):
-                outfile = os.path.join(self.diroutorder, '00'+sufix, self.processdf['ImageDate'][i]+sufix+'.dim')
-                time1 = datetime.now()
-                if not os.path.isfile(outfile) or self.overwrite == '1':
-                    try:
-                        p = subself.check_output([self.pathgpt, gpt_calibration, '-Pinput1='+self.processdf['ImagePreprocess'][i], '-Ptarget1='+outfile])
-                    except:
-                        p = ''
-                outputfiles.append(outfile)
-                outputtimes.append(str((datetime.now()-time1).seconds/60))
+        if self.calib != '0':
+            if self.calib == 'sigma' or self.calib == 'Sigma':
+                sigmaparam, gammaparam, betaparam = True, False, False
+            elif self.calib == 'gamma' or self.calib == 'Gamma':
+                sigmaparam, gammaparam, betaparam = False, True, False
+            elif self.calib == 'beta' or self.calib == 'Beta':
+                sigmaparam, gammaparam, betaparam = False, False, True  
+            calib_bool = [sigmaparam, gammaparam, betaparam]
+            outputfiles = [os.path.join(self.diroutorder, '00'+self.sufix, self.processdf['ImageDate'][i]+self.sufix+'.dim') for i in range(len(self.processdf))]
+            outputtimes = list(Parallel(n_jobs=self.num_cores)(delayed(self.mpCalibration)(self.processdf['ImagePreprocess'][i], outputfiles[i], calib_bool) for i in range(len(self.processdf))))
             self.processdf['Outputfiles_calib'] = outputfiles
             self.processdf['Processing_minutes_calib'] = outputtimes
         else:
@@ -373,7 +345,7 @@ class model():
             outputfiles = self.processdf['ImagePreprocess']
             outputtimes = ['0'] * len(self.processdf)
         self.processdf['Outputfiles'] = outputfiles
-        self.processdf['Processing_minutes'] = outputtimes
+        self.processdf['Processing_minutes_calib'] = outputtimes
         self.processdf['ImageDate'] = pd.to_datetime(self.processdf['ImageDate'])
         self.processdf = self.processdf.sort_values(by=['ImageDate'])
         #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, RUN ALIGNMENT PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
@@ -387,7 +359,6 @@ class model():
         slavedf = self.processdf.copy()
         pairspath = mountpairs(pd.concat([masterdf['Outputfiles'], slavedf['Outputfiles']], sort=False).reset_index(), 'Outputfiles')
         pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate_str')
-#        [outputfiles, outputifg1, outputifg2, datelist, outputtimes] = Parallel(n_jobs=num_cores)(delayed(self.pair_coregistration)(pairspath[i], pairsdate[i]) for i in range(len(pairspath)))
         #Coregistration process        
         df_coreg = pd.DataFrame(Parallel(n_jobs=self.num_cores)(delayed(self.pair_coregistration)(pairspath[i], pairsdate[i]) for i in range(len(pairspath))))             
         outputfiles = [item[0] for item in df_coreg[0]]
@@ -396,15 +367,27 @@ class model():
         #Get position of master and add master record
         self.processdf.reset_index(drop=True, inplace=True) 
         masterid = self.processdf[self.processdf['ImageDate_str']==self.datemaster].index[0]
-        self.processdf['Outputfiles_align'+self.sufix] = outputfiles
         #Fill processing info into df
         self.processdf['Outputfiles_align'+self.sufix] = outputfiles
         self.processdf['Processing_minutes_align'] = outputtimes
         self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
-        #Generate reference matrices (lat/lon) for further geocoding
+        #Generate reference matrices (lat/lon) for further geocoding. Baselines file is also generated
         self.generateGeocoding()
+        #Remove temp dir
+        if os.path.isdir(self.tempdir):
+            shutil.rmtree(self.tempdir)
         msg = 'Coregistration generated'
         return msg
+    
+    def mpCalibration(self, inputfile, outputfile, calib_bool):
+        gpt_calibration = os.path.join(self.DirProject, 'RES', 'calibration_outputcomplex.xml')
+        time1 = datetime.now()
+        if not os.path.isfile(outputfile) or self.overwrite == '1':
+            try:
+                p = subprocess.check_output([self.pathgpt, gpt_calibration, '-Pinput1='+inputfile, '-Psigmaparam='+str(calib_bool[0]), '-Pgammaparam='+str(calib_bool[1]), '-Pbetaparam='+str(calib_bool[2]), '-Ptarget1='+outputfile])
+            except:
+                p = ''
+        return((datetime.now()-time1).seconds/60)
 
     def cleaning_coreg(self, imagecoreg):
         #Go through the coregistered images and change file names, remove master image...
@@ -413,6 +396,9 @@ class model():
         ifgdir = os.path.join(self.diroutorder, self.subdiroutifg, imageref+'.data')
         ifgnocorrectdir = os.path.join(self.diroutorder, self.subdiroutifg, imageref+'_nocorrect.data')
         deletelist = glob(os.path.join(imagedir, '*mst*'))
+        if os.path.isfile(os.path.join(imagedir, 'ifg_result.img')):
+            deletelist.append(os.path.join(imagedir, 'ifg_result.img'))
+            deletelist.append(os.path.join(imagedir, 'ifg_result.hdr'))
         for file in deletelist:
             os.remove(file)
         changenamelist = glob(os.path.join(imagedir, '*slv*'))
@@ -422,24 +408,26 @@ class model():
             os.rename(filetemp, filetemp.replace(filetemp[filetemp.find('_slv3'):filetemp.find('_slv3')+15], ''))
         for fold in [ifgdir, ifgnocorrectdir]:
             for file in glob(os.path.join(fold, '*.*')):
-                filetemp = file
-                if 'slv' in file:
-                    filetemp = file.replace(file[file.find('_slv'):file.find('_slv')+15], '')
-                filedest = filetemp.replace(filetemp[filetemp.find('_ifg_')+8:filetemp.find('_ifg_')+18], '')
-                os.rename(file, filedest)
+                if 'coh' not in file:
+                    filetemp = file
+                    if 'slv' in file:
+                        filetemp = file.replace(file[file.find('_slv'):file.find('_slv')+15], '')
+                    filedest = filetemp.replace(filetemp[filetemp.find('_ifg_V')+8:filetemp.find('_ifg_')+18], '')
+                    os.rename(file, filedest)
                 
     def generate_baselinelist (self):
         self.baselinelist = self.processdf.copy()
         #Master record removed (no baseline between the same image as master and slave)
         self.baselinelist = self.baselinelist.drop(self.baselinelist[self.processdf['ImageDate'] == datetime.strptime(self.datemaster, '%Y%m%d')].index)
         self.baselinelist.reset_index(drop=True, inplace=True) 
-        self.baselinelist['Master'] = self.datemaster
-        self.baselinelist['Slave'] = self.baselinelist['ImageDate_str']
-        self.baselinelist['Perp_Baseline'] = [self.searchMetabytag(self.baselinelist['Outputfiles_align'+self.sufix][i], 'Perp Baseline')[1] for i in range(len(self.baselinelist))]
-        self.baselinelist['Temp_Baseline'] = [self.searchMetabytag(self.baselinelist['Outputfiles_align'+self.sufix][i], 'Temp Baseline')[1] for i in range(len(self.baselinelist))]
+        self.baselinelist['Master_date'] = self.datemaster
+        self.baselinelist['Slave_date'] = self.baselinelist['ImageDate_str']
+        self.baselinelist['Perp_Baseline'] = [round(-1*float(self.searchMetabytag(self.baselinelist['Outputfiles_align'+self.sufix][i], 'Perp Baseline')[1]), 2) for i in range(len(self.baselinelist))]
+        self.baselinelist['Temp_Baseline'] = [int(-1*float(self.searchMetabytag(self.baselinelist['Outputfiles_align'+self.sufix][i], 'Temp Baseline')[1])) for i in range(len(self.baselinelist))]
+        self.baselinelist['Coregistered_SLCs'] = self.baselinelist['Outputfiles_align'+self.sufix]
         fieldlist = []
         #Delete fields not needed
-        for tag in ['ImageDate', 'Outputfiles', 'Processing_minutes']:
+        for tag in ['Timeunzip', 'ImageDate', 'ImageOrigin', 'Outputfiles', 'ImagePreprocess', 'Processing_minutes']:
             for band in list(self.baselinelist):
                 if tag in band:
                     fieldlist.append(band)
@@ -447,111 +435,27 @@ class model():
         waninglist = self.baselinelist.copy()
         while len(waninglist)>1:
             for i in range(len(waninglist)-1):
-                perp = round(float(waninglist['Perp_Baseline'][0]) - float(waninglist['Perp_Baseline'][i+1]), 2)
-                temp = int(round(float(waninglist['Temp_Baseline'][0]) - float(waninglist['Temp_Baseline'][i+1]), 0))
-                #self.baselinelist.loc[len(self.baselinelist)] = [str(waninglist['Slave'][0]), str(waninglist['Slave'][i+1]), perp, temp]
-                self.baselinelist = self.baselinelist.append(pd.Series([str(waninglist['Slave'][0]), str(waninglist['Slave'][i+1]), perp, temp]), ignore_index=True)
+                perp = round(float(waninglist['Perp_Baseline'][i+1]) - float(waninglist['Perp_Baseline'][0]), 2)
+                temp = int(round(float(waninglist['Temp_Baseline'][i+1]) - float(waninglist['Temp_Baseline'][0]), 0))
+                self.baselinelist = self.baselinelist.append(pd.Series([str(waninglist['Slave_date'][0]), str(waninglist['Slave_date'][i+1]), perp, temp, None], index=self.baselinelist.columns), ignore_index=True)
             waninglist = waninglist.drop(0)
             waninglist.reset_index(drop=True, inplace=True)
         #Filter table with maxbasetemp and maxbaseperp
-        self.baselinelist['Temp_Baseline'] = abs(pd.to_numeric(self.baselinelist['Temp_Baseline']))
-        self.baselinelist['Perp_Baseline'] = abs(pd.to_numeric(self.baselinelist['Perp_Baseline']))
+        self.baselinelist['Temp_Baseline'] = pd.to_numeric(self.baselinelist['Temp_Baseline'])
+        self.baselinelist['Perp_Baseline'] = pd.to_numeric(self.baselinelist['Perp_Baseline'])
         if self.maxbasetemp != '':
             if self.maxbaseperp != '':
-                self.baselinefiltered = self.baselinelist[(self.baselinelist.Temp_Baseline <= self.maxbasetemp) & (self.baselinelist.Perp_Baseline <= self.maxbaseperp)]
+                self.baselinefiltered = self.baselinelist[(abs(self.baselinelist.Temp_Baseline) <= self.maxbasetemp) & (abs(self.baselinelist.Perp_Baseline) <= self.maxbaseperp)]
             else:
-                self.baselinefiltered = self.baselinelist[(self.baselinelist.Temp_Baseline <= self.maxbasetemp)]
+                self.baselinefiltered = self.baselinelist[(abs(self.baselinelist.Temp_Baseline) <= self.maxbasetemp)]
         else:
             if self.maxbaseperp != '':
-                self.baselinefiltered = self.baselinelist[(self.baselinelist.Perp_Baseline <= self.maxbaseperp)]
+                self.baselinefiltered = self.baselinelist[(abs(self.baselinelist.Perp_Baseline) <= self.maxbaseperp)]
             else:
                 self.baselinefiltered = self.baselinelist.copy()
-        self.baselinefiltered.to_csv(os.path.join(self.diroutorder, 'baselines.csv'), sep=';', index=False)
-
-    def applyMultilook(self, inputfile, outputfile, azLooks, rgLooks):
-        sys.path.append(self.snappypath)
-        import snappy
-        from snappy import ProductIO, GPF, HashMap
-        HashMap = snappy.jpy.get_type('java.util.HashMap')
-        #Get snappy Operators
-        GPF.getDefaultInstance().getOperatorSpiRegistry().loadOperatorSpis() 
-        if not os.path.isfile(inputfile):
-            print('Input file ' + inputfile + ' does not exist')
-            sys.exit()
-        else:
-            time1 = datetime.now()
-            parameters = HashMap()
-            parameters.put('grSquarePixel', True)
-            parameters.put('nRgLooks', rgLooks)
-            parameters.put('nAzLooks', azLooks)
-            parameters.put('outputIntensity', False)
-            multi_param = snappy.GPF.createProduct("Multilook", parameters, ProductIO.readProduct(inputfile))
-            ProductIO.writeProduct(multi_param, outputfile, 'BEAM-DIMAP')
-            return((datetime.now()-time1).seconds/60)
+        self.baselinefiltered.to_csv(os.path.join(self.diroutorder, 'baselines_filtered.csv'), sep=';', index=False)
+        self.baselinelist.to_csv(os.path.join(self.diroutorder, 'baselines.csv'), sep=';', index=False)
             
-    def Multilook(self):
-        output_sufix = '_ML_' + self.azLooks + '_' + self.rgLooks
-        outputfiles = []
-        outputtimes = []
-        msg = []
-        #If calibration has been applied, ML over calibrated products, if not, ML over non-calibrated products
-        if 'Outputfiles_align_calib' in list(self.processdf):
-            filesML = 'Outputfiles_align' + self.sufix
-        else:
-            filesML = 'Outputfiles_align'
-        for i in range(len(self.processdf[filesML])):
-            if os.path.isfile(self.processdf[filesML][i]):
-                inputfile = self.processdf[filesML][i]
-                outputfile = os.path.join(self.diroutorder, self.subdiroutml, os.path.splitext(os.path.basename(inputfile))[0] + output_sufix + '.dim')
-                if not os.path.isfile(outputfile) or self.overwrite == '1':
-                    outputtimes.append(self.applyMultilook(inputfile, outputfile, self.azLooks, self.rgLooks))
-                else:
-                    outputtimes.append('0')
-                outputfiles.append(outputfile)
-            else:
-                msg.append = 'Multilook not generated file ' + self.processdf[filesML][i] + ' not found'
-                continue
-        self.processdf['Outputfiles_ML'] = outputfiles
-        self.processdf['Processing_minutes_ML'] = outputtimes
-        self.processdf.to_csv(os.path.join(self.diroutorder, 'process_log.csv'), sep=';', index=False)
-        msg = 'Multilook generated'
-        return msg
-    
-    def applydatelistGeocoding(self, gcdatelist):
-        #Check if coregistration geocoding has been generated
-        if not (os.path.isfile(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLat.img')) and os.path.isfile(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLon.img'))):
-            self.generateGeocoding()
-        outputdir = os.path.join(self.diroutorder, self.subdiroutgc)
-        for date in gcdatelist:
-            inputfilegc = self.processdf[self.processdf['ImageDate_str'] == date]['Outputfiles_align'+self.sufix].tolist()[0]
-            #outputdirgc = os.path.join(outputdir, gcdatelist[i]+'_ifg_gc.dim')
-            timegc = self.applyGeocoding(inputfilegc, outputdir, date)
-        
-    def applyGeocoding(self, inputfile, outputdir, date):
-        time1 = datetime.now()
-        #Load data
-        inputfolder = os.path.splitext(inputfile)[0] + '.data'
-        lat = gdal.Open(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLat.img'))
-        lon = gdal.Open(os.path.join(self.diroutorder, self.subdiroutgc, 'orthorectifiedLon.img'))
-        lat_arr = lat.ReadAsArray()
-        lon_arr = lon.ReadAsArray()
-        #Check for bands for geocoding and resampling
-        bandlist = glob(inputfolder+'/*.img')
-        if bandlist is not None:
-            #Adjust to the Sentinel 2 grid
-            ulxgrid, ulygrid, lrxgrid, lrygrid = self.check_S2grid(np.min(self.x), np.max(self.y), np.max(self.x), np.min(self.y))
-            wout = int((lrxgrid - ulxgrid) / self.spatialres)
-            hout = int((ulygrid - lrygrid) / self.spatialres)
-            x1 = np.linspace(lrxgrid, ulxgrid, wout)
-            y1 = np.linspace(lrygrid, ulygrid, hout)
-            grid_x, grid_y = np.meshgrid(x1,y1)
-            for band in bandlist:
-                data_getband = gdal.Open(band)
-                data_arr = data_getband.ReadAsArray()
-                grid_data = griddata((self.x.flatten(), self.y.flatten()), data_arr.flatten(), (grid_x, grid_y), method='nearest')
-                np.save(os.path.join(outputdir, date, os.path.basename(band)), grid_data)
-        return((datetime.now()-time1).seconds/60)
-        
     def check_S2grid(self, ulx, uly, lrx, lry):
         #Extract x,y reference coordinates for each zone
         if not (hasattr(self, 's2gridrefx') and hasattr(self, 's2gridrefy')):
@@ -588,40 +492,16 @@ class model():
         else:
             lrygrid = self.s2gridrefy[int(self.epsgout)] - int((self.s2gridrefy[float(self.epsgout)] - lry) / self.spatialres)*self.spatialres
         return (ulxgrid, ulygrid, lrxgrid, lrygrid)
-
-    def backup_filenames(file_list):
-        for file in file_list:
-            shutil.move(file, os.path.join(os.path.splitext(file)[0]+'_bckp'+os.path.splitext(file)[1]))
-    
-    def mergeortholatlon(self, inputfile, outputdir):
-        subswath_list = sorted(glob(os.path.join(self.tempdir, os.path.splitext(inputfile)[0] + '*VH_IW[1-3].dim')))
-        #shutil.copytree(subswath_list, outputdir)
-        refdir = []
-        for subswath in subswath_list:
-            refdir.append(os.path.join(outputdir, os.path.splitext(os.path.basename(subswath))[0]+'.data'))
-            if os.path.exists(refdir[-1]):
-                shutil.rmtree(refdir[-1])
-            shutil.copytree(os.path.splitext(subswath)[0]+'.data', refdir[-1])
-            shutil.copy(subswath, os.path.join(outputdir, os.path.basename(subswath)))
-            i_list = glob(os.path.join(refdir[-1], '*i_ifg*'))
-            q_list = glob(os.path.join(refdir[-1], '*q_ifg*'))
-            backup_filenames(i_list)
-            backup_filenames(q_list)
-            for el in i_list:
-                shutil.copy(os.path.join(refdir[-1], 'orthorectifiedLat'+el[-4:]), el)
-            for el in q_list:
-                shutil.copy(os.path.join(refdir[-1], 'orthorectifiedLon'+el[-4:]), el)
-        self.TOPS_Merge_subswaths (refdir+'.dim', os.path.join(outputdir, 'merge'), self.pathgpt)
-            
+     
     def generateGeocoding(self):
         from snappy import ProductIO, GPF, HashMap
         self.generate_baselinelist()
         gptxml_file = os.path.join(self.DirProject, 'RES', 'ifg_ortholatlon.xml')
         indexGC = int(self.baselinefiltered[['Perp_Baseline']].idxmax())
-        inputfile1 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Master']]['Outputfiles_align'+self.sufix].tolist()[0]
-        inputfile2 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Slave']]['Outputfiles_align'+self.sufix].tolist()[0]
-        date1 = self.baselinefiltered.loc[indexGC]['Master']
-        date2 = self.baselinefiltered.loc[indexGC]['Slave']
+        inputfile1 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Master_date']]['Outputfiles_align'+self.sufix].tolist()[0]
+        inputfile2 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Slave_date']]['Outputfiles_align'+self.sufix].tolist()[0]
+        date1 = self.baselinefiltered.loc[indexGC]['Master_date']
+        date2 = self.baselinefiltered.loc[indexGC]['Slave_date']
         outputdir = os.path.join(self.diroutorder, self.subdiroutgc)
         outputfile = os.path.join(outputdir, 'ifg_gc_'+date1+'_'+date2+'.dim')
         subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+inputfile1, '-Pinput2='+inputfile2, '-Ptarget1='+outputfile])
@@ -632,8 +512,7 @@ class model():
         shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'tie_point_grids', 'incident_angle.img'), os.path.join(outputdir, 'incident_angle.img'))
         shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'tie_point_grids', 'incident_angle.hdr'), os.path.join(outputdir, 'incident_angle.hdr'))
         shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.img'), os.path.join(outputdir, 'elevation.img'))
-        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.hdr'), os.path.join(outputdir, 'elevation.hdr'))
-        
+        shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.hdr'), os.path.join(outputdir, 'elevation.hdr')) 
         #If ortho latlon numpy matrices needed
         prod = ProductIO.readProduct(outputfile)
         ortho_lat = prod.getBand('orthorectifiedLat')
@@ -665,20 +544,19 @@ class model():
         self.x, self.y = transformer.transform(lonpix,latpix)
         np.save(os.path.join(outputdir, 'x'), self.x)
         np.save(os.path.join(outputdir, 'y'), self.y)
-        
         #Incident angle
-        #tiePoints = list(prod.getTiePointGridNames())
         inc = prod.getRasterDataNode('incident_angle')
         theta = np.zeros((h, w), dtype=np.float32)
         theta = inc.readPixels(0, 0, w, h, theta)
         np.save(os.path.join(outputdir, 'incid_angle'), theta)
-        ProductIO.writeProduct(theta, os.path.join(outputdir, 'incident_angle.img'), None)
+        self.array2raster(os.path.join(outputdir, 'incid_angle.img'), (0, 0), 1, -1, theta)
+        #ProductIO.writeProduct(theta, os.path.join(outputdir, 'incident_angle.img'), None)
         #Adjust to the Sentinel 2 grid
         ulxgrid, ulygrid, lrxgrid, lrygrid = self.check_S2grid(np.min(self.x), np.max(self.y), np.max(self.x), np.min(self.y))
         wout = int((lrxgrid - ulxgrid) / self.spatialres)
         hout = int((ulygrid - lrygrid) / self.spatialres)
-        x1 = np.linspace(lrxgrid, ulxgrid, wout)
-        y1 = np.linspace(lrygrid, ulygrid, hout)
+        x1 = np.linspace(lrxgrid, ulxgrid, wout+1)
+        y1 = np.linspace(lrygrid, ulygrid, hout+1)
         grid_x, grid_y = np.meshgrid(x1,y1)
         # inci_grid = griddata((self.x.flatten(), self.y.flatten()), theta.flatten(), (grid_x, grid_y), method='nearest')
         # np.save(os.path.join(outputdir, 'incid_angle_EPSG'+self.epsgout, inci_grid))   
@@ -692,26 +570,121 @@ class model():
             imagarr = imagband.ReadAsArray()
             complex_mat = realarr + imagarr * 1j
             phase = np.angle(complex_mat)
-            self.array2raster(outputfile + '_'+ polariz + '.img', (0, 0), phase.shape[1], phase.shape[0], phase)
+            self.array2raster(outputfile + '_'+ polariz + '.img', (0, 0), 1, -1, phase)
             return phase
     
     def differential_phase(self, ifgpair):
+        polariz = self.polarizphaseunwrap
+        output = os.path.join(ifgpair[0], 'ifg_result').replace('01_ifg', '01_slc') + '.img'
         time1 = datetime.now()
-        polarizations = ['VV', 'VH']
-        for polariz in polarizations:
+        if not os.path.isfile(output) or self.overwrite == '1':
             phasecomplete = self.compute_phase(ifgpair[0], polariz, os.path.join(os.path.splitext(ifgpair[0])[0] + '_ifg_compl.data'))
             phasediff = self.compute_phase(ifgpair[1], polariz, os.path.join(os.path.splitext(ifgpair[0])[0] + '_ifg_diff.data'))
             phasesubtr = phasediff - phasecomplete
-            #eit= cost+isint     https://www.math.wisc.edu/~angenent/Free-Lecture-Notes/freecomplexnumbers.pdf
-            #cmath.exp(a))    https://www.askpython.com/python/python-complex-numbers
             re_result = np.cos(phasesubtr)
             im_result = np.sin(phasesubtr)
             complex_mat = re_result + im_result * 1j
             phase_result = np.angle(complex_mat)
-            output = os.path.join(ifgpair[0], 'ifg_result' + polariz).replace('01_ifg', '01_slc') + '.img'
-            self.array2raster(output, (0, 0), phase_result.shape[1], phase_result.shape[0], phase_result)
-        return(output ,(datetime.now()-time1).seconds/60)
+            self.array2raster(output, (0, 0), 1, -1, phase_result)
+        else:
+            phase_result =  gdal.Open(output).ReadAsArray()
+        outputphasefile = os.path.join(ifgpair[0], 'ifg_result_unwrap').replace('01_ifg', '01_slc') + '.img'
+        if not os.path.isfile(outputphasefile) or self.overwrite == '1':
+            self.unwrapphase(phase_result, outputphasefile)
+        return(outputphasefile ,(datetime.now()-time1).seconds/60)
     
+    def blocksplitter(self, width, height, block_w, block_h, overlapw, overlaph):
+        nblockx = int(width/block_w) + (width%block_w>0)
+        nblocky = int(height/block_h) + (height%block_h>0)
+        splitblock = []
+        for bly in range(nblocky):
+            for blx in range(nblockx):
+                ulx = (block_w - overlapw) * blx
+                uly = (block_h - overlaph) * bly
+                if bly == 0:
+                    uly = 0
+                if blx == 0:
+                    ulx = 0
+                lrx = ulx + block_w
+                lry = uly + block_h
+                if blx == nblockx - 1:
+                    lrx = width
+                if bly == nblocky - 1:
+                    lry = height   
+                splitblock.append((bly, blx, ulx, uly, lrx, lry))
+        return(np.array(splitblock))
+    
+    def unwrapphase(self, phase_result, outputphasefile):
+        #Call to SNAPHU, which has a limited size for phase unwrapping
+        #Slicing parameters block size, overlap between blocks
+        block_w = 3000
+        block_h = 3000
+        overlapw = 10
+        overlaph = 10
+        phase_w = phase_result.shape[1]
+        phase_h = phase_result.shape[0]
+        splitblock = self.blocksplitter(phase_w, phase_h, block_w, block_h, overlapw, overlaph)
+        nblockx = max(splitblock[:,1])+1
+        nblocky = max(splitblock[:,2])+1
+        #Dummy coherence (one's). Filtered (where phase ==0)=0
+        coh = np.where(phase_result==0, 0, 1)
+        outcoh = os.path.join(os.path.dirname(outputphasefile), 'coh_dummy.img')
+        #self.array2raster(outcoh, (0, 0), 1, -1, coh)
+        unwrapfilelist = []
+        if not os.path.exists(os.path.join(os.path.dirname(outputphasefile), 'unwrap')):
+            os.makedirs(os.path.join(os.path.dirname(outputphasefile), 'unwrap'))
+        for row in splitblock:
+            outblockfile = os.path.join(os.path.dirname(outputphasefile), 'unwrap', 'block_'+str(row[0])+'_'+str(row[1])+'.img')
+            self.array2raster(outblockfile, (row[2], -row[3]), 1, -1, phase_result[row[3]:row[5], row[2]:row[4]])
+            cohblockfile = os.path.join(os.path.dirname(outputphasefile), 'unwrap', 'cohblock_'+str(row[0])+'_'+str(row[1])+'.img')
+            self.array2raster(cohblockfile, (row[2], -row[3]), 1, -1, coh[row[3]:row[5], row[2]:row[4]])
+            outblockunwrap = os.path.join(os.path.dirname(outputphasefile), 'unwrap', 'unwrapblock_'+str(row[0])+'_'+str(row[1])+'.img')
+            subprocess.check_output([self.snaphupath, '-s', outblockfile, str(row[4]-row[2]), '-o', outblockunwrap, '-c', cohblockfile, '-f', self.snaphuconf])
+            shutil.copyfile(outblockfile.replace('img', 'hdr'), outblockunwrap.replace('img', 'hdr'))
+            unwrapfilelist.append(outblockunwrap)
+        #Setup of complete matrix
+        unwrap_complete = np.zeros((phase_h, phase_w))
+        #Merge blocks
+        for bl in range(len(splitblock)-1):   
+            rowref = splitblock[bl, 0]
+            colref = splitblock[bl, 1]
+            rowtar = splitblock[bl+1, 0]
+            coltar = splitblock[bl+1, 1]
+            #Relative positions of overlap to every image
+            ref_ov_coords = [block_w-overlapw, 0, block_w, (splitblock[(splitblock[:, 0]==rowref) & (splitblock[:, 1]==colref), 5].item() - splitblock[(splitblock[:, 0]==rowref) & (splitblock[:, 1]==colref), 3].item())]
+            tar_ov_coords = [0, 0, overlapw, (splitblock[(splitblock[:, 0]==rowref) & (splitblock[:, 1]==colref), 5].item() - splitblock[(splitblock[:, 0]==rowref) & (splitblock[:, 1]==colref), 3].item())]
+            im_ref_index = bl
+            im_tar_index = bl+1
+            if rowref != rowtar:
+                rowref = rowtar-1
+                colref = coltar
+                ref_ov_coords = [0, block_h-overlaph, block_w, block_h]
+                tar_ov_coords = [0, 0, block_w, overlaph]
+                im_ref_index = bl-(nblockx-1)
+                im_tar_index = bl+1                 
+            if bl==0:
+                refblock = gdal.Open(unwrapfilelist[im_ref_index]).ReadAsArray()
+            else:
+                if rowref != rowtar:
+                    refblock = unwrap_complete[splitblock[im_ref_index, 3]:splitblock[im_ref_index, 5], splitblock[im_ref_index, 2]:splitblock[im_ref_index, 4]]
+                else:
+                    refblock = tarblock
+            tarblock = gdal.Open(unwrapfilelist[im_tar_index]).ReadAsArray()
+            ref_overlap = refblock[ref_ov_coords[1]:ref_ov_coords[3], ref_ov_coords[0]:ref_ov_coords[2]]
+            tar_overlap = tarblock[tar_ov_coords[1]:tar_ov_coords[3], tar_ov_coords[0]:tar_ov_coords[2]]
+            #Overlap values may differ, most frequent value used for offsetting the unwrapped blocks
+            diff_overlap = ref_overlap - tar_overlap
+            offvalue = np.percentile(sorted(diff_overlap.flatten()), [10, 90])[-1]
+            print('row:'+str(rowref), 'col:'+str(colref), 'offs:'+str(offvalue))
+            tarblock = tarblock + offvalue
+            #Fill unwrap matrix
+            if bl == 0:
+                unwrap_complete[splitblock[bl, 3]:splitblock[bl, 5], splitblock[bl, 2]:splitblock[bl, 4]] = refblock
+            unwrap_complete[splitblock[bl+1, 3]:splitblock[bl+1, 5], splitblock[bl+1, 2]:splitblock[bl+1, 4]] = tarblock
+        self.array2raster(outputphasefile, (0, 0), 1, -1, unwrap_complete)
+        #Delete temp unwrap dir
+        shutil.rmtree(os.path.join(os.path.dirname(outputphasefile), 'unwrap'))        
+        
     def array2raster(self, newRasterfn, rasterOrigin, pixelWidth, pixelHeight, array):
         cols = array.shape[1]
         rows = array.shape[0]
