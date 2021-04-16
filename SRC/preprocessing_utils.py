@@ -92,26 +92,27 @@ class model():
         time1 = datetime.now()
         if ImageDate.count(date) == 1:
             imagefile = imagelist.iloc[imagelist[imagelist['Date']==date].index[0], imagelist.columns.get_loc('Image')]
-            outputpath = os.path.join(self.diroutputzip, os.path.splitext(os.path.basename(imagefile))[0]+'.SAFE', 'manifest.safe')
-            if not os.path.isfile(outputpath) or self.overwrite == '1':
-                if os.path.splitext(imagefile)[1] == '.zip':
-                    #OVERWRITE CONDITION FOR UNZIP FILES
+            if os.path.splitext(imagefile)[1] == '.zip':
+                outputpath = os.path.join(self.diroutputzip, os.path.splitext(os.path.basename(imagefile))[0]+'.SAFE', 'manifest.safe')
+                if not os.path.isfile(outputpath) or self.overwrite == '1':
                     unzipS1 (imagefile, self.diroutputzip)
                     inputimage = imagefile
                     timeproc = (datetime.now()-time1).seconds/60
-                elif os.path.splitext(os.path.basename(imagefile))[1] == '.safe':
-                    if os.path.isdir(os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile)))):
-                        shutil.copytree(os.path.dirname(imagefile), os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile))))
-                    outputpath = os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile)), 'manifest.safe')
+                else:
                     inputimage = imagefile
+                    timeproc = '0'
+            elif os.path.splitext(imagefile)[1] == '.safe':
+                outputpath = os.path.join(self.diroutputzip, os.path.basename(os.path.normpath(os.path.dirname(imagefile))), 'manifest.safe')
+                if not os.path.isfile(outputpath) or self.overwrite == '1':
+                    shutil.copytree(os.path.dirname(imagefile), os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile))))
                     timeproc = (datetime.now()-time1).seconds/60
                 else:
-                    print('Image format not supported: ' + imagelist.Image[i])
-                    sys.exit()
-            else:
+                    timeproc = '0'
+                #outputpath = os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile)), 'manifest.safe')
                 inputimage = imagefile
-                timeproc = '0'
-                
+            else:
+                print('Image format not supported: ' + imagelist.Image[i])
+                sys.exit()
         elif ImageDate.count(date) == 2:
             #Slice-assembly for joining products
             assemblist = imagelist[imagelist.Image.str.contains(date)]['Image'].tolist()
