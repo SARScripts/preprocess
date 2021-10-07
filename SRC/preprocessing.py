@@ -85,15 +85,18 @@ if __name__ == "__main__":
                 sys.exit('Introduce a file with a list of image paths')
             msg = Process.coregistration_ifg()
             print(msg)
-        if orders.Process_type[i] == 'generate_list':
-            if Process.processdf is not None:
-                for im in Process.processdf['Outputfiles_align']:
-                    if not os.path.isfile(im):
-                        sys.exit('Outputs from coregistration processing not found (' + im + ')')
-                Process.maxbasetemp = float(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
-                Process.maxbaseperp = float(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
-                Process.generate_baselinelist()
-            else:
-                sys.exit('Image list does not match with alignment preprocess list')
+#         if orders.Process_type[i] == 'generate_list':
+#             print("[*] GENERATE LIST")
+#             if Process.processdf is not None:
+#                 for im in Process.processdf['Outputfiles_align']:
+#                     if not os.path.isfile(im):
+#                         sys.exit('Outputs from coregistration processing not found (' + im + ')')
+#                 print(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
+#                 print(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
+#                 Process.maxbasetemp = float(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
+#                 Process.maxbaseperp = float(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
+#                 Process.generate_baselinelist()
+#             else:
+#                 sys.exit('Image list does not match with alignment preprocess list')
 
     print('Processing time: ', (datetime.now()-time1).seconds/60)
