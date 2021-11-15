@@ -1,0 +1,42 @@
+<graph id="Graph">
+  <version>1.0</version>
+  <node id="Read">
+    <operator>Read</operator>
+    <sources/>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>$input1</file>
+    </parameters>
+  </node>
+
+  <node id="TOPSAR-Deburst">
+    <operator>TOPSAR-Deburst</operator>
+    <sources>
+      <sourceProduct refid="Read"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <selectedPolarisations/>
+    </parameters>
+  </node>
+  <node id="Write">
+    <operator>Write</operator>
+    <sources>
+      <sourceProduct refid="TOPSAR-Deburst"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>$target1</file>
+      <formatName>BEAM-DIMAP</formatName>
+    </parameters>
+  </node>
+  <applicationData id="Presentation">
+    <Description/>
+    <node id="Read">
+      <displayPosition x="25.0" y="13.0"/>
+    </node>
+    <node id="TOPSAR-Deburst">
+      <displayPosition x="474.0" y="26.0"/>
+    </node>
+    <node id="Write">
+      <displayPosition x="166.0" y="304.0"/>
+    </node>
+  </applicationData>
+</graph>

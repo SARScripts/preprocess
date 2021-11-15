@@ -17,7 +17,7 @@ from pyproj import Proj, transform, Transformer, CRS
 from joblib import Parallel, delayed
 import multiprocessing
 import math
-
+import logging
 
 def listar (a): #Genera una lista de un string separado por comas leído de un config file
     if pd.isnull(a):
@@ -35,117 +35,244 @@ def mountpairs (dflist, field): #Pairs combining the first element with the rest
     return pairs
 
 class model():
-    def __init__(self, process_type, imagelistfile, diroutorder, overwrite, datemaster, AOI, calib, pathgpt, snappypath, snaphupath, snaphuconf, DirProject, num_cores):
-        self.process_type = process_type
+    def __init__(self, process_type, imagelistfile, diroutorder, overwrite, datemaster, AOI, calib, pathgpt, snappypath, snaphupath, snaphuconf, DirProject, num_cores, do_interferogram, do_phase):
+
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            handlers=[
+                logging.FileHandler("sar2cube_debug.log"),
+                logging.StreamHandler(sys.stdout)
+            ]
+        )
+        self.process_type  = process_type
         self.imagelistfile = imagelistfile
-        self.datemaster = datemaster
+        self.datemaster    = datemaster
         if self.datemaster == '':
             self.datemaster = 'nodate'
         self.AOI = AOI
         if not self.AOI:
             self.AOI = ['', '', '', '']
         self.diroutorder = diroutorder
-        self.overwrite = overwrite
-        self.calib = str(calib)
+        self.overwrite   = overwrite
+        self.calib       = str(calib)
         if self.calib != '0':
             self.sufix = '_calib'
         else:
             self.sufix = ''
         self.subdiroutslc = '01_slc' + self.sufix
         self.subdiroutifg = '01_ifg' + self.sufix
-        self.subdiroutml = '02_ml'
-        self.subdiroutgc = '03_gc'
-        self.pathgpt = pathgpt
-        self.snappypath = snappypath
-        self.snaphupath = snaphupath
-        self.snaphuconf = snaphuconf
-        self.DirProject = DirProject
-        self.processdf = pd.DataFrame()
+        self.subdiroutml  = '02_ml'
+        self.subdiroutgc  = '03_gc'
+        self.pathgpt      = pathgpt
+        self.snappypath   = snappypath
+        self.snaphupath   = snaphupath
+        self.snaphuconf   = snaphuconf
+        self.DirProject   = DirProject
+        self.processdf    = pd.DataFrame()
         self.baselinelist = pd.DataFrame()
-        self.maxbaseperp = ''
-        self.maxbasetemp = ''
+        self.maxbaseperp  = ''
+        self.maxbasetemp  = ''
         self.baselinefiltered = pd.DataFrame()
         self.logfilename = 'process_log.csv'
         self.epsgin = '4326'
         self.polarizphaseunwrap = 'VV'
-        #Number of cores should fit the ratio between RAM memory and 23 Gb/core (need for coregistration)
+        # Number of cores should fit the ratio between RAM memory and 23 Gb/core (need for coregistration).
+        # We can try to use more for the other steps
         self.num_cores = num_cores
+        self.tempdir = None
+        self.do_interferogram = int(do_interferogram)
+        self.do_phase = int(do_phase)
+        self.iw = None
+        
+        self.gptxml_unzip         = os.path.join(self.DirProject, 'RES', 'sliceassembly.xml')
+        self.gpt_calibration      = os.path.join(self.DirProject, 'RES', 'calibration_outputcomplex.xml')
+        self.gptxml_ESD           = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_ESD.xml')
+        self.gptxml_Deburst       = os.path.join(self.DirProject, 'RES', 'Deburst_Write.xml')
+        self.gptxml_IFG           = os.path.join(self.DirProject, 'RES', 'Interferogram.xml')
+        self.gptxml_IFG_nocorrect = os.path.join(self.DirProject, 'RES', 'Interferogram_nocorrect.xml')
+        self.gptxml_stackdual     = os.path.join(self.DirProject, 'RES', 'stack_dualpolariz.xml')
+        self.gptxml_merge2IW      = os.path.join(self.DirProject, 'RES', 'merge_2subswaths.xml')
+        self.gptxml_merge3IW      = os.path.join(self.DirProject, 'RES', 'merge_3subswaths.xml')
+        self.gptxml_geocod        = os.path.join(self.DirProject, 'RES', 'ifg_ortholatlon.xml')
+
         if not os.path.exists(self.diroutorder):
             os.makedirs(self.diroutorder)            
         sys.path.append(self.snappypath)
         import snappy
         from snappy import ProductIO, GPF, HashMap
 
-    def searchMetabytag(self, metafilepath, tag):
-        if pd.isnull(metafilepath):
-            meta = '0'
-        else:
-            meta = []
-            tree = ET.parse(metafilepath)
-            root = tree.getroot()
-            for atr in root.iter('MDATTR'):
-                if atr.get('name') == tag:
-                    meta.append(atr.text)
-        return meta
-
-    def mpUnzipAssembly(self, imagelist, ImageDate, date):
-        print("[*] Running mpUnzipAssembly...")
-        time1 = datetime.now()
-        if ImageDate.count(date) == 1:
-            imagefile = imagelist.iloc[imagelist[imagelist['Date']==date].index[0], imagelist.columns.get_loc('Image')]
-            if os.path.splitext(imagefile)[1] == '.zip':
-                print("[*] Unzipping Sentinel data from file " + imagefile)
-                outputpath = os.path.join(self.diroutputzip, os.path.splitext(os.path.basename(imagefile))[0]+'.SAFE', 'manifest.safe')
-                if not os.path.isfile(outputpath) or self.overwrite == '1':
-                    unzipS1 (imagefile, self.diroutputzip)
-                    inputimage = imagefile
-                    timeproc = (datetime.now()-time1).seconds/60
-                else:
-                    inputimage = imagefile
-                    timeproc = '0'
-            elif os.path.splitext(imagefile)[1] == '.safe':
-                outputpath = os.path.join(self.diroutputzip, os.path.basename(os.path.normpath(os.path.dirname(imagefile))), 'manifest.safe')
-                if not os.path.isfile(outputpath) or self.overwrite == '1':
-                    shutil.copytree(os.path.dirname(imagefile), os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile))))
-                    timeproc = (datetime.now()-time1).seconds/60
-                else:
-                    timeproc = '0'
-                #outputpath = os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile)), 'manifest.safe')
-                inputimage = imagefile
+    
+    def coregistration_ifg (self):
+        #Read the image file
+        imagelist = pd.read_csv(self.imagelistfile, sep=';', decimal=',')
+        #Unzip if zipfiles, slice assembly if two products for the same date in imagelist and fill up ImagePreprocess, ImageName, ImageDate columns
+        ImagePreprocess = []
+        ImageName = []
+        ImageDate = []
+        ImageOrigin = []
+        TimeZipAssem = []
+        
+        self.diroutputzip = os.path.join(self.diroutorder, '00_data')
+        if not os.path.exists(self.diroutputzip):
+            os.makedirs(self.diroutputzip)
+            
+        #Extract dates from filenames
+        for i in range(len(imagelist)):
+            if os.path.splitext(imagelist.Image[i])[1] == '.zip':
+                name = os.path.splitext(os.path.basename(imagelist.Image[i]))[0]
+            elif os.path.splitext(imagelist.Image[i])[1].lower() == '.safe':
+                name = os.path.basename(imagelist.Image[i]).split('.')[0]
             else:
-                print('Image format not supported: ' + imagelist.Image[i])
+                logging.error("[!] Image format not supported: " + imagelist.Image[i])
                 sys.exit()
-        elif ImageDate.count(date) == 2:
-            #Slice-assembly for joining products
-            assemblist = imagelist[imagelist.Image.str.contains(date)]['Image'].tolist()
-            outputpath = os.path.join(self.diroutputzip, date, date+'_assembl.dim')
-            if not os.path.isfile(outputpath) or self.overwrite == '1':
-                try:
-                    p = subprocess.check_output([self.pathgpt, self.gptxml_unzip, '-Pinput1='+assemblist[0], '-Pinput2='+assemblist[1], '-Ptarget1='+outputpath])
-                except Exception as e:
-                    raise e
-#                 finally:
-#                     p.terminate() # send sigterm, or ...
-#                     p.kill()      # send sigkill    
-            timeproc = (datetime.now()-time1).seconds/60
-            inputimage = assemblist
+            ImageDate.append(name[name.find('T')-8:name.find('T')])
+        imagelist['Date'] = ImageDate
+        uniquedates = list(set(ImageDate))
+        
+        #######################################
+        # Unzipping SLC data & Slice Assembly # 
+        #######################################
+        
+        logging.info("[*] Unzipping the data...")
+        df_unzipassemb = pd.DataFrame(Parallel(n_jobs=self.num_cores)(delayed(self.mpUnzipAssembly)(imagelist, ImageDate, uniquedates[i]) for i in range(len(uniquedates))))
+        self.processdf['ImageOrigin'] = df_unzipassemb[0]
+        self.processdf['ImagePreprocess'] = df_unzipassemb[1]
+        self.processdf['TimeunzipAsseml'] = df_unzipassemb[2]
+        self.processdf['ImageDate'] = uniquedates
+        
+        #######################
+        # Calibration process # 
+        #######################
+        
+        logging.info("[*] Computing calibration...")
+        #Calibration of original products
+        outputfiles = []
+        outputtimes = []
+        if self.calib != '0':
+            sigmaparam, gammaparam, betaparam = False, False, False
+            if self.calib.lower() == 'sigma':
+                sigmaparam = True
+            elif self.calib.lower() == 'gamma':
+                gammaparam = True
+            elif self.calib.lower() == 'beta':
+                betaparam  = True  
+            calib_bool = [sigmaparam, gammaparam, betaparam]
+            outputfiles = [os.path.join(self.diroutorder, '00'+self.sufix, self.processdf['ImageDate'][i]+self.sufix+'.dim') for i in range(len(self.processdf))]
+            outputtimes = list(Parallel(n_jobs=self.num_cores)(delayed(self.mpCalibration)(self.processdf['ImagePreprocess'][i], outputfiles[i], calib_bool) for i in range(len(self.processdf))))
+            self.processdf['Outputfiles_calib'] = outputfiles
+            self.processdf['Processing_minutes_calib'] = outputtimes
         else:
-            print('More than 2 images (not allowed) with date:', date)
-        return (inputimage, outputpath, timeproc)
+            self.sufix =''
+            outputfiles = self.processdf['ImagePreprocess']
+            outputtimes = ['0'] * len(self.processdf)
+            
+        self.processdf['Outputfiles'] = outputfiles
+        self.processdf['Processing_minutes_calib'] = outputtimes
+        self.processdf['ImageDate'] = pd.to_datetime(self.processdf['ImageDate'])
+        self.processdf = self.processdf.sort_values(by=['ImageDate'])
+        
+        #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, RUN ALIGNMENT PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
+        #Identify master image row and set up slave images dataframe
+        
+        if not any (self.processdf['ImageDate'] == self.datemaster):
+            datelist = list(self.processdf.ImageDate.sort_values().astype(int)/10**9)
+            self.datemaster = pd.to_datetime(datelist[min(range(len(datelist)), key = lambda i: abs(datelist[i]-(datelist[-1]+datelist[0])/2))], unit='s', origin='unix').strftime('%Y%m%d')
+            
+        logging.info("[*] Master date: " + str(self.datemaster))
+        
+        self.processdf['ImageDate_str'] = [date_obj.strftime('%Y%m%d') for date_obj in self.processdf['ImageDate']]
+        #Master image is reindexed to the top of the df
+        masterdf = self.processdf[self.processdf['ImageDate_str'] == self.datemaster]
+        slavedf = self.processdf.copy()
+        pairspath = mountpairs(pd.concat([masterdf['Outputfiles'], slavedf['Outputfiles']], sort=False).reset_index(), 'Outputfiles')
+        pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate_str')
+        
+        ################################
+        # AOI - Subswaths intersection #
+        ################################
+        
+        logging.info("[*] Computing AOI - Subswaths intersection...")
 
-    def pair_coregistration(self, paths, dates, ortholatlon=0):
-        self.gptxml_coreg = os.path.join(self.DirProject, 'RES', 'TOPSAR_Coreg_ifg_ESD_Polariz_wkt.xml')
-        output_sufix = '_Coregistered'
-        nocorrection_tag = '_nocorrect'
-        if ortholatlon == 0:
-            self.tempdir = os.path.join(self.diroutorder, self.subdiroutslc, 'temp')
-            self.subdiroutslc = '01_slc' + self.sufix
-            self.subdiroutifg = '01_ifg' + self.sufix
-        else:
-            self.tempdir = os.path.join(self.diroutorder, self.subdiroutgc, 'temp')
-            self.subdiroutslc, self.subdiroutifg = self.subdiroutgc, self.subdiroutgc              
+        intersected_subswaths = ['IW1', 'IW2', 'IW3']
+        if any (self.AOI):
+            lonmin = self.AOI[0]
+            latmax = self.AOI[1]
+            lonmax = self.AOI[2]
+            latmin = self.AOI[3]
+            input4 = 'POLYGON (('+lonmin+' '+latmin+', '+lonmax+' '+latmin+', '+lonmax+' '+latmax+', '+lonmin+' '+latmax+', '+lonmin+' '+latmin+'))'
+            import stsa
+            import shapely.wkt
+            from shapely.geometry import Polygon
+            import geopandas as gpd
+
+            crs = 'epsg:4326'
+            poly = shapely.wkt.loads(input4)
+            polygon = gpd.GeoDataFrame(index=[0], crs=crs, geometry=[poly])   
+            # polygon.to_file('wktAoi.shp')
+            s1 = stsa.TopsSplitAnalyzer(target_subswaths=['iw1', 'iw2', 'iw3'], polarization='vh')
+            s1.load_data(zip_path=imagelist.Image[0])
+            s1._create_subswath_geometry()
+            poly1 = s1.df.reset_index(drop=True)
+            poly1_intersection = poly1.copy()
+            for index, orig in poly1.iterrows():
+                for index2, ref in polygon.iterrows():
+                    if ref['geometry'].intersects(orig['geometry']):
+                        continue
+                    else:
+                        poly1_intersection = poly1_intersection.drop(index=index)
+            subswaths_list = list(poly1_intersection['subswath'])
+            intersected_subswaths = list(set(subswaths_list))
+        
+        self.iw = intersected_subswaths
+        logging.info("[*] The subswaths intersecting the provided AOI are: ".join(intersected_subswaths))
+        
+        ##########################
+        # Coregistration process # 
+        ##########################
+        
+        logging.info("[*] Starting the coregistration process...")
+        
+        self.tempdir = os.path.join(self.diroutorder, self.subdiroutslc, 'temp')
         if not os.path.isdir(self.tempdir):
             os.makedirs(self.tempdir)
+        
+        df_coreg = pd.DataFrame(Parallel(n_jobs=self.num_cores)(delayed(self.pair_coregistration)(pairspath[i], pairsdate[i]) for i in range(len(pairspath))))             
+        outputfiles = [item[0] for item in df_coreg[0]]
+        datelist = [item[0] for item in df_coreg[3]]
+        outputtimes = [item[0] for item in df_coreg[4]]
+        imagebasenames = [item for item in df_coreg[5]]
+        #Get position of master and add master record
+        self.processdf.reset_index(drop=True, inplace=True) 
+        masterid = self.processdf[self.processdf['ImageDate_str']==self.datemaster].index[0]
+        #Fill processing info into df
+        self.processdf['Outputfiles_align'+self.sufix] = outputfiles
+        self.processdf['Processing_minutes_align'] = outputtimes
+        self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
+        
+        #####################
+        # Geocoding process #
+        #####################
+        
+        #Generate reference matrices (lat/lon) for further geocoding. Baselines file is also generated
+        self.generateGeocoding()
+        #Remove temp dir
+        for im in imagebasenames:
+            self.cleaning_coreg(os.path.join(self.diroutorder, self.subdiroutslc, im + '.dim'))
+        if self.tempdir is not None:
+            if os.path.isdir(self.tempdir):
+                shutil.rmtree(self.tempdir)
+        
+        return
+        
+    def pair_coregistration(self, paths, dates):
+    
+        output_sufix = '_Coregistered'
+        nocorrection_tag = '_nocorrect'
+        
+        self.subdiroutslc = '01_slc' + self.sufix
+        self.subdiroutifg = '01_ifg' + self.sufix  
+        
         lonmin = self.AOI[0]
         latmax = self.AOI[1]
         lonmax = self.AOI[2]
@@ -158,21 +285,19 @@ class model():
         time1 = datetime.now()
         input1 = paths[0]
         input2 = paths[1]
-        input3 = ['IW1', 'IW2', 'IW3']
+        input4 = ''
         if any (self.AOI):
             input4 = 'POLYGON (('+lonmin+' '+latmin+', '+lonmax+' '+latmin+', '+lonmax+' '+latmax+', '+lonmin+' '+latmax+', '+lonmin+' '+latmin+'))'
-        else:
-            input4 = ''
+
+        input3 = self.iw            
         input5 = ['VV', 'VH']
-        if ortholatlon == 0:
-            input6 = 'false'
-        else:
-            input6 = 'true'
+        input6 = 'false' #ortholatlon output flag
+        
         #The process is executed for every subswath
         if os.path.splitext(input2)[1] == '.safe' or os.path.splitext(input2)[1] == '.dim':
             slavename = dates[1] + '_SLC' + self.sufix
         else:
-            print('Image format not supported: ' + input2)
+            logging.error("[!] Image format not supported: " + input2)
             sys.exit()
         imagebasename = dates[0] + '_' + slavename + output_sufix
         if not os.path.isfile(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim')) or self.overwrite == '1':
@@ -188,22 +313,81 @@ class model():
             #Go through polarizations
             for polariz in input5:
                 output1 = imagebasename + '_' + polariz
+                logging.info("[*] Processing " + output1)
                 #Generate coregistration for every subswath
                 for k in range(len(input3)):
+                    ################################################################################################
+                    # First step: Read, TOPSAR-Split, Apply orbit file, back-geocoding-enhanced spectral diversity #
+                    ################################################################################################
+                    
+                    time_start = datetime.now()
+
+                    outputfile_esd = os.path.join(self.tempdir, output1 + '_' + input3[k] + '_ESD.dim')
+                    logging.info("[*] Read, TOPSAR-Split, Apply orbit file, back-geocoding-enhanced spectral diversity.")
+                    if not os.path.isfile(outputfile_esd) or self.overwrite == '1':
+                        try:
+                            p = subprocess.check_output([self.pathgpt, self.gptxml_ESD, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4, '-Pinput5='+polariz,'-Pinput6='+input6,'-Ptarget1='+outputfile_esd])
+                        except Exception as e:
+                            print(e)    
+                    
+                    elapsed_time = (datetime.now()-time_start).seconds/60
+                    logging.info("[*] Elapsed time: " + str(elapsed_time))
+
+                    # Define output file paths for the three outputs:
                     outputfile1 = os.path.join(self.diroutorder, self.subdiroutifg, output1 + '_' + input3[k] + '.dim')
                     outputfile2 = os.path.join(self.diroutorder, self.subdiroutifg, output1 + '_' + input3[k] + nocorrection_tag + '.dim')
                     outputfile3 = os.path.join(self.diroutorder, self.subdiroutslc, output1 + '_' + input3[k] + 'im.dim')
-                    try:
-                        p = subprocess.check_output([self.pathgpt, self.gptxml_coreg, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3[k], '-Pinput4='+input4, '-Pinput5='+polariz,'-Pinput6='+input6,'-Ptarget1='+outputfile1,'-Ptarget2='+outputfile2 ,'-Ptarget3='+outputfile3])
-                    except Exception as e:
-                        print(e)
-#                     finally:
-#                         p.terminate() # send sigterm, or ...
-#                         p.kill()      # send sigkill    
+                    
+                    #####################################
+                    # Second step: Read, Deburst, Write #
+                    #####################################
+                    time_start = datetime.now()
+                    logging.info("[*] Read, Deburst, Write.")
+                    if not os.path.isfile(outputfile3) or self.overwrite == '1':
+                        try:
+                            p = subprocess.check_output([self.pathgpt, self.gptxml_Deburst, '-Pinput1='+outputfile_esd,'-Ptarget1='+outputfile3])
+                        except Exception as e:
+                            print(e)
+
+                    elapsed_time = (datetime.now()-time_start).seconds/60
+                    logging.info("[*] Elapsed time: " + str(elapsed_time))
+                    
+                    ##############################################
+                    # Second step: Interferogram, Deburst, Write #
+                    ##############################################
+                    if self.do_interferogram:
+                        time_start = datetime.now()
+                        logging.info("[*] Interferogram, Deburst, Write.")
+
+                        if not os.path.isfile(outputfile1) or self.overwrite == '1':
+                            try:
+                                p = subprocess.check_output([self.pathgpt, self.gptxml_IFG, '-Pinput1='+outputfile_esd,'-Ptarget1='+outputfile1])
+                            except Exception as e:
+                                print(e)     
+
+                        elapsed_time = (datetime.now()-time_start).seconds/60
+                        logging.info("[*] Elapsed time: " + str(elapsed_time))
+                    
+                    ################################################################
+                    # Third step: Interferogram without correction, Deburst, Write #
+                    ################################################################
+                    if self.do_interferogram:
+                        time_start = datetime.now()
+                        logging.info("[*] Interferogram without correction, Deburst, Write.")
+
+                        if not os.path.isfile(outputfile2) or self.overwrite == '1':
+                            try:
+                                p = subprocess.check_output([self.pathgpt, self.gptxml_IFG, '-Pinput1='+outputfile_esd,'-Ptarget1='+outputfile2])
+                            except Exception as e:
+                                print(e) 
+
+                        elapsed_time = (datetime.now()-time_start).seconds/60
+                        logging.info("[*] Elapsed time: " + str(elapsed_time))
+                    
                 #After processing subswaths, they are put together with TOPS Merge Workflow
                 #List of subswaths by checking the output files. The output is added at the end of the list
                 subswath_list1 = sorted(glob(os.path.join(self.diroutorder, self.subdiroutifg, output1 + '*' + nocorrection_tag + '*.dim')))
-                subswath_list2 = sorted(glob(os.path.join(self.diroutorder, self.subdiroutifg, output1 + '*.dim')))
+                subswath_list2 = sorted(glob(os.path.join(self.diroutorder, self.subdiroutifg, output1 + '*IW*.dim')))
                 subswath_list3 = sorted(glob(os.path.join(self.diroutorder, self.subdiroutslc, output1 + '*.dim')))
                 for f in subswath_list1:
                     subswath_list2.remove(f)
@@ -212,9 +396,21 @@ class model():
                 subswath_list2.append(os.path.join(self.diroutorder, self.subdiroutifg, output1))
                 subswath_list3.append(os.path.join(self.diroutorder, self.subdiroutslc, output1+'im'))
                 #Function TOPS Merge is only called when more than 1 subswath is generated. Only IW products supported (max. 3 subswaths)
-                for listmerge in [subswath_list1, subswath_list2, subswath_list3]:
+                
+                ##############
+                # TOPS Merge #
+                ############## 
+                
+                time_start = datetime.now()
+                logging.info("[*] TOPS Merge.")
+                
+                ## subswath_list1 and subswath_list2 will not exist if we do not generate the interferogram
+                merged_list = [subswath_list1, subswath_list2, subswath_list3]
+                if not self.do_interferogram:
+                    merged_list = [subswath_list3]
+                for listmerge in merged_list:
                     if len(listmerge)<2:
-                        print('AOI does not match scene extents')
+                        logging.error("[!] AOI does not match scene extents")
                         sys.exit()
                     elif len(listmerge)==2:
                         #Change output name from IWx to 'merged' in case AOI covers only one subswath
@@ -231,12 +427,26 @@ class model():
                             if os.path.isdir(os.path.join(self.tempdir, os.path.splitext(os.path.basename(filePath))[0]+'.data')):
                                 shutil.rmtree(os.path.join(self.tempdir, os.path.splitext(os.path.basename(filePath))[0]+'.data'))    
                             shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(self.tempdir, os.path.splitext(os.path.basename(filePath))[0]+'.data'))
+            
+                elapsed_time = (datetime.now()-time_start).seconds/60
+                logging.info("[*] Elapsed time: " + str(elapsed_time))
+                        
+            #######################
+            # Polarizations Stack #
+            ####################### 
+            
+            time_start = datetime.now()
+            logging.info("[*] Polarizations Stack.")
+                
             polariz_list1 = sorted(glob(os.path.join(self.diroutorder, self.subdiroutifg, imagebasename) + '*V*nocorrect*.dim'))
             polariz_list2 = sorted(glob(os.path.join(self.diroutorder, self.subdiroutifg, imagebasename) + '*V*.dim'))
             polariz_list3 = sorted(glob(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename) + '*V*.dim'))
             for f in polariz_list1:
-                polariz_list2.remove(f) 
-            for listpol in [polariz_list1, polariz_list2, polariz_list3]:
+                polariz_list2.remove(f)
+            merged_pol_list = [polariz_list1, polariz_list2, polariz_list3]
+            if not self.do_interferogram:
+                merged_pol_list = [polariz_list3]
+            for listpol in merged_pol_list:
                 if listpol==polariz_list1:
                     outputfile = os.path.join(self.diroutorder, self.subdiroutifg, imagebasename) + nocorrection_tag + '.dim'
                 if listpol == polariz_list2:
@@ -252,18 +462,40 @@ class model():
                             shutil.move(filePath, os.path.join(self.tempdir, os.path.basename(filePath)))
                             shutil.move(os.path.splitext(filePath)[0]+'.data', os.path.join(self.tempdir, os.path.splitext(os.path.basename(filePath))[0]+'.data'))
                         except:
-                            print("Error while deleting file : ", filePath)
+                            logging.error("[!] Error while deleting file : " + str(filePath))
                 else:
                     #Change output name in case the product has only one polarization
                     shutil.move(listpol[0], outputfile)
                     shutil.move(os.path.splitext(listpol[0])[0]+'.data', os.path.splitext(outputfile)+'.data')
-            #Compute differential phase
-            self.differential_phase([os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.data'), os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '_nocorrect.data')]) 
+                    
+            elapsed_time = (datetime.now()-time_start).seconds/60
+            logging.info("[*] Elapsed time: " + str(elapsed_time))
+                
+                        
+            #######################
+            # Polarizations Stack #
+            ####################### 
+                        
+            if self.do_phase:
+                time_start = datetime.now()
+                logging.info("[*] Compute differential phase.")
+            
+                self.differential_phase([os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.data'), os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '_nocorrect.data')])
+        
+                elapsed_time = (datetime.now()-time_start).seconds/60
+                logging.info("[*] Elapsed time: " + str(elapsed_time))
         else:
             #Compute differential phase if not exists
             if not os.path.isfile(os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.data', 'ifg_result_unwrap').replace('01_ifg', '01_slc') + '.img') or self.overwrite == '1':
-                 self.differential_phase([os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.data'), os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '_nocorrect.data')]) 
-        #Clean/rename temp files
+                if self.do_phase:
+                    time_start = datetime.now()
+                    logging.info("[*] Compute differential phase.")
+                    
+                    self.differential_phase([os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '.data'), os.path.join(self.diroutorder, self.subdiroutifg, imagebasename + '_nocorrect.data')]) 
+                    
+                    elapsed_time = (datetime.now()-time_start).seconds/60
+                    logging.info("[*] Elapsed time: " + str(elapsed_time))
+                    
         #Store production data in table
         if os.path.isfile(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim')):
             outputfiles.append(os.path.join(self.diroutorder, self.subdiroutslc, imagebasename + '.dim'))
@@ -274,166 +506,154 @@ class model():
         outputtimes.append((datetime.now()-time1).seconds/60)
         datelist.append(dates[1])        
         return [outputfiles, outputifg1, outputifg2, datelist, outputtimes,imagebasename]
+     
+    def generateGeocoding(self):
+        #############
+        # Geocoding #
+        ############# 
+        if not os.path.exists(os.path.join(self.diroutorder, self.subdiroutgc)) or self.overwrite == '1':
+            time_start = datetime.now()
+            logging.info("[*] Geocoding step.")
+            try:
+                os.makedirs(os.path.join(self.diroutorder, self.subdiroutgc))
+            except:
+                pass
+            from snappy import ProductIO, GPF, HashMap
+            self.generate_baselinelist()
+            gptxml_file = os.path.join(self.DirProject, 'RES', 'ifg_ortholatlon.xml')
+            indexGC = int(self.baselinefiltered[['Perp_Baseline']].idxmax())
+            inputfile1 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Master_date']]['Outputfiles_align'+self.sufix].tolist()[0]
+            inputfile2 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Slave_date']]['Outputfiles_align'+self.sufix].tolist()[0]
+            date1 = self.baselinefiltered.loc[indexGC]['Master_date']
+            date2 = self.baselinefiltered.loc[indexGC]['Slave_date']
+            outputdir = os.path.join(self.diroutorder, self.subdiroutgc)
+            outputfile = os.path.join(outputdir, 'ifg_gc_'+date1+'_'+date2+'.dim')
+            try:
+                p = subprocess.check_output([self.pathgpt, self.gptxml_geocod, '-Pinput1='+inputfile1, '-Pinput2='+inputfile2, '-Ptarget1='+outputfile])
+            except Exception as e:
+                raise e        
+            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLon.img'), os.path.join(outputdir, 'orthorectifiedLon.img'))
+            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLon.hdr'), os.path.join(outputdir, 'orthorectifiedLon.hdr'))
+            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLat.img'), os.path.join(outputdir, 'orthorectifiedLat.img'))
+            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLat.hdr'), os.path.join(outputdir, 'orthorectifiedLat.hdr'))
+            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'tie_point_grids', 'incident_angle.img'), os.path.join(outputdir, 'incident_angle.img'))
+            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'tie_point_grids', 'incident_angle.hdr'), os.path.join(outputdir, 'incident_angle.hdr'))
+            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.img'), os.path.join(outputdir, 'elevation.img'))
+            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.hdr'), os.path.join(outputdir, 'elevation.hdr')) 
+            #If ortho latlon numpy matrices needed
+            prod = ProductIO.readProduct(outputfile)
+            w = prod.getSceneRasterWidth()
+            h = prod.getSceneRasterHeight()
+            #Incident angle
+            inc = prod.getRasterDataNode('incident_angle')
+            theta = np.zeros((h, w), dtype=np.float32)
+            theta = inc.readPixels(0, 0, w, h, theta)
+            self.array2raster(os.path.join(outputdir, 'incid_angle.img'), (0, 0), 1, -1, theta)
+
+            elapsed_time = (datetime.now()-time_start).seconds/60
+            logging.info("[*] Elapsed time: " + str(elapsed_time))
         
+        return  
+    
+    def searchMetabytag(self, metafilepath, tag):
+        if pd.isnull(metafilepath):
+            meta = '0'
+        else:
+            meta = []
+            tree = ET.parse(metafilepath)
+            root = tree.getroot()
+            for atr in root.iter('MDATTR'):
+                if atr.get('name') == tag:
+                    meta.append(atr.text)
+        return meta
+
+    def mpUnzipAssembly(self, imagelist, ImageDate, date):
+        time1 = datetime.now()
+        if ImageDate.count(date) == 1:
+            imagefile = imagelist.iloc[imagelist[imagelist['Date']==date].index[0], imagelist.columns.get_loc('Image')]
+            if os.path.splitext(imagefile)[1] == '.zip':
+                outputpath = os.path.join(self.diroutputzip, os.path.splitext(os.path.basename(imagefile))[0]+'.SAFE', 'manifest.safe')
+                if not os.path.isfile(outputpath) or self.overwrite == '1':
+                    logging.info("[*] Unzipping Sentinel data from file " + imagefile)
+                    unzipS1(imagefile, self.diroutputzip)
+                    inputimage = imagefile
+                    timeproc = (datetime.now()-time1).seconds/60
+                else:
+                    inputimage = imagefile
+                    timeproc = '0'
+            elif os.path.splitext(imagefile)[1].lower() == '.safe':
+                logging.error("[*] Input are SAFE folders, currently not supported by the AOI Subswaths check")
+                sys.exit()
+                outputpath = imagefile + '/manifest.safe'
+                if not os.path.isfile(outputpath) or self.overwrite == '1':
+                    shutil.copytree(os.path.dirname(imagefile), os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile))))
+                    timeproc = (datetime.now()-time1).seconds/60
+                else:
+                    timeproc = '0'
+                #outputpath = os.path.join(self.diroutputzip, os.path.basename(os.path.dirname(imagefile)), 'manifest.safe')
+                inputimage = imagefile
+            else:
+                logging.error("[!] Image format not supported: " + imagelist.Image[i])
+                sys.exit()
+        elif ImageDate.count(date) == 2:
+            logging.info("[*] Running slice assembly...")
+            #Slice-assembly for joining products
+            assemblist = imagelist[imagelist.Image.str.contains(date)]['Image'].tolist()
+            outputpath = os.path.join(self.diroutputzip, date, date+'_assembl.dim')
+            if not os.path.isfile(outputpath) or self.overwrite == '1':
+                try:
+                    p = subprocess.check_output([self.pathgpt, self.gptxml_unzip, '-Pinput1='+assemblist[0], '-Pinput2='+assemblist[1], '-Ptarget1='+outputpath])
+                except Exception as e:
+                    raise e
+
+            timeproc = (datetime.now()-time1).seconds/60
+            inputimage = assemblist
+        else:
+            logging.error("[!] More than 2 images (not allowed) with date: " + str(date))
+        return (inputimage, outputpath, timeproc)
+    
     def stack_polariz (self, imagepathlist, outputfile, pathgpt):
         if len(imagepathlist)==2:
-            gptxml_file = os.path.join(self.DirProject, 'RES', 'stack_dualpolariz.xml')
             input1 = imagepathlist[0]
             input2 = imagepathlist[1]
             try:
-                p = subprocess.check_output([pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Ptarget1='+outputfile])
+                p = subprocess.check_output([pathgpt, self.gptxml_stackdual, '-Pinput1='+input1, '-Pinput2='+input2, '-Ptarget1='+outputfile])
             except Exception as e:
-                raise e
-#             finally:
-#                 p.terminate() # send sigterm, or ...
-#                 p.kill()      # send sigkill    
+                raise e  
         return p
     
     def TOPS_Merge_subswaths (self, imagepathlist, outputfile, pathgpt):
         if(len(imagepathlist)==2):
-            gptxml_file = os.path.join(self.DirProject, 'RES', 'merge_2subswaths.xml')
             input1 = imagepathlist[0]
             input2 = imagepathlist[1]
             try:
-                p = subprocess.check_output([pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Ptarget1='+outputfile])
+                p = subprocess.check_output([pathgpt, self.gptxml_merge2IW, '-Pinput1='+input1, '-Pinput2='+input2, '-Ptarget1='+outputfile])
             except Exception as e:
                 raise e
-#             finally:
-#                 p.terminate() # send sigterm, or ...
-#                 p.kill()      # send sigkill    
         if(len(imagepathlist)==3):
             gptxml_file = os.path.join(self.DirProject, 'RES', 'merge_3subswaths.xml')
             input1 = imagepathlist[0]
             input2 = imagepathlist[1]
             input3 = imagepathlist[2]
             try:
-                p = subprocess.check_output([pathgpt, gptxml_file, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3, '-Ptarget1='+outputfile])
+                p = subprocess.check_output([pathgpt, self.gptxml_merge3IW, '-Pinput1='+input1, '-Pinput2='+input2, '-Pinput3='+input3, '-Ptarget1='+outputfile])
             except Exception as e:
-                raise e
-#             finally:
-#                 p.terminate() # send sigterm, or ...
-#                 p.kill()      # send sigkill    
+                raise e  
         return p
     
-    def coregistration_ifg (self):
-        #Read the image file
-        imagelist = pd.read_csv(self.imagelistfile, sep=';', decimal=',')
-        #Unzip if zipfiles, slice assembly if two products for the same date in imagelist and fill up ImagePreprocess, ImageName, ImageDate columns
-        self.gptxml_unzip = os.path.join(self.DirProject, 'RES', 'sliceassembly.xml')
-        ImagePreprocess = []
-        ImageName = []
-        ImageDate = []
-        ImageOrigin = []
-        TimeZipAssem = []
-        self.diroutputzip = os.path.join(self.diroutorder, '00_data')
-        if not os.path.exists(self.diroutputzip):
-            os.makedirs(self.diroutputzip)
-        #Extract dates from filenames
-        for i in range(len(imagelist)):
-            if os.path.splitext(imagelist.Image[i])[1] == '.zip':
-                name = os.path.splitext(os.path.basename(imagelist.Image[i]))[0]
-            elif os.path.splitext(imagelist.Image[i])[1] == '.safe':
-                name = os.path.basename(os.path.dirname(imagelist.Image[i])).split('.')[0]
-            else:
-                print('Image format not supported: ' + imagelist.Image[i])
-                sys.exit()
-            ImageDate.append(name[name.find('T')-8:name.find('T')])
-        imagelist['Date'] = ImageDate
-        uniquedates = list(set(ImageDate))
-        print("[*] Unzipping the data...")
-        
-        df_unzipassemb = pd.DataFrame(Parallel(n_jobs=self.num_cores)(delayed(self.mpUnzipAssembly)(imagelist, ImageDate, uniquedates[i]) for i in range(len(uniquedates))))
-#         out_0_list = []
-#         out_1_list = []
-#         out_2_list = []
-#         for i in range(len(uniquedates)):
-#             print("Inside the for loop")
-#             print(uniquedates[i])
-#             out = self.mpUnzipAssembly(imagelist, ImageDate, uniquedates[i])
-#             out_0_list.append(out[0])
-#             out_1_list.append(out[1])
-#             out_2_list.append(out[2])
-#         print(out_0_list)
-#         print(out_1_list)
-#         print(out_2_list)
-#         df_unzipassemb = [out_0_list,out_1_list,out_2_list]
-        self.processdf['ImageOrigin'] = df_unzipassemb[0]
-        self.processdf['ImagePreprocess'] = df_unzipassemb[1]
-        self.processdf['TimeunzipAsseml'] = df_unzipassemb[2]
-        self.processdf['ImageDate'] = uniquedates
-        #Calibration of original products
-        outputfiles = []
-        outputtimes = []
-        if self.calib != '0':
-            if self.calib == 'sigma' or self.calib == 'Sigma':
-                sigmaparam, gammaparam, betaparam = True, False, False
-            elif self.calib == 'gamma' or self.calib == 'Gamma':
-                sigmaparam, gammaparam, betaparam = False, True, False
-            elif self.calib == 'beta' or self.calib == 'Beta':
-                sigmaparam, gammaparam, betaparam = False, False, True  
-            calib_bool = [sigmaparam, gammaparam, betaparam]
-            outputfiles = [os.path.join(self.diroutorder, '00'+self.sufix, self.processdf['ImageDate'][i]+self.sufix+'.dim') for i in range(len(self.processdf))]
-            outputtimes = list(Parallel(n_jobs=self.num_cores)(delayed(self.mpCalibration)(self.processdf['ImagePreprocess'][i], outputfiles[i], calib_bool) for i in range(len(self.processdf))))
-            self.processdf['Outputfiles_calib'] = outputfiles
-            self.processdf['Processing_minutes_calib'] = outputtimes
-        else:
-            self.sufix =''
-            outputfiles = self.processdf['ImagePreprocess']
-            outputtimes = ['0'] * len(self.processdf)
-        self.processdf['Outputfiles'] = outputfiles
-        self.processdf['Processing_minutes_calib'] = outputtimes
-        self.processdf['ImageDate'] = pd.to_datetime(self.processdf['ImageDate'])
-        self.processdf = self.processdf.sort_values(by=['ImageDate'])
-        #IF MASTER IMAGE DATE MATCHES ANY DATE OF THE FILE LIST, RUN ALIGNMENT PROCESSING (OTHERWISE MASTER DATE IS COMPUTED AS THE 'MID POINT' DATE OF THE LIST)
-        #Identify master image row and set up slave images dataframe
-        if not any (self.processdf['ImageDate'] == self.datemaster):
-            datelist = list(self.processdf.ImageDate.sort_values().astype(int)/10**9)
-            self.datemaster = pd.to_datetime(datelist[min(range(len(datelist)), key = lambda i: abs(datelist[i]-(datelist[-1]+datelist[0])/2))], unit='s', origin='unix').strftime('%Y%m%d')
-        print("[*] Master date: ",self.datemaster)
-        self.processdf['ImageDate_str'] = [date_obj.strftime('%Y%m%d') for date_obj in self.processdf['ImageDate']]
-        #Master image is reindexed to the top of the df
-        masterdf = self.processdf[self.processdf['ImageDate_str'] == self.datemaster]
-        slavedf = self.processdf.copy()
-        pairspath = mountpairs(pd.concat([masterdf['Outputfiles'], slavedf['Outputfiles']], sort=False).reset_index(), 'Outputfiles')
-        pairsdate = mountpairs(pd.concat([masterdf, slavedf], sort=False).reset_index(), 'ImageDate_str')
-        #Coregistration process        
-        df_coreg = pd.DataFrame(Parallel(n_jobs=self.num_cores)(delayed(self.pair_coregistration)(pairspath[i], pairsdate[i]) for i in range(len(pairspath))))             
-        outputfiles = [item[0] for item in df_coreg[0]]
-        datelist = [item[0] for item in df_coreg[3]]
-        outputtimes = [item[0] for item in df_coreg[4]]
-        imagebasenames = [item for item in df_coreg[5]]
-        #Get position of master and add master record
-        self.processdf.reset_index(drop=True, inplace=True) 
-        masterid = self.processdf[self.processdf['ImageDate_str']==self.datemaster].index[0]
-        #Fill processing info into df
-        self.processdf['Outputfiles_align'+self.sufix] = outputfiles
-        self.processdf['Processing_minutes_align'] = outputtimes
-        self.processdf.to_csv(os.path.join(self.diroutorder, self.logfilename), sep=';', index=False)
-        #Generate reference matrices (lat/lon) for further geocoding. Baselines file is also generated
-        self.generateGeocoding()
-        #Remove temp dir
-        for im in imagebasenames:
-            self.cleaning_coreg(os.path.join(self.diroutorder, self.subdiroutslc, im + '.dim'))        
-        if os.path.isdir(self.tempdir):
-            shutil.rmtree(self.tempdir)
-        msg = 'Coregistration generated'
-        return msg
-    
     def mpCalibration(self, inputfile, outputfile, calib_bool):
-        gpt_calibration = os.path.join(self.DirProject, 'RES', 'calibration_outputcomplex.xml')
+        logging.info("[*] Running Calibration...")
         time1 = datetime.now()
         if not os.path.isfile(outputfile) or self.overwrite == '1':
             try:
-                p = subprocess.check_output([self.pathgpt, gpt_calibration, '-Pinput1='+inputfile, '-Psigmaparam='+str(calib_bool[0]), '-Pgammaparam='+str(calib_bool[1]), '-Pbetaparam='+str(calib_bool[2]), '-Ptarget1='+outputfile])
+                p = subprocess.check_output([self.pathgpt, self.gpt_calibration, '-Pinput1='+inputfile, '-Psigmaparam='+str(calib_bool[0]), '-Pgammaparam='+str(calib_bool[1]), '-Pbetaparam='+str(calib_bool[2]), '-Ptarget1='+outputfile])
             except Exception as e:
                 raise e
-#             finally:
-#                 p.terminate() # send sigterm, or ...
-#                 p.kill()      # send sigkill
+                
         return((datetime.now()-time1).seconds/60)
 
     def cleaning_coreg(self, imagecoreg):
-        print("[*] Cleaning unnecessary files...")
+        logging.info("[*] Cleaning unnecessary files...")
         #Go through the coregistered images and change file names, remove master image...
         imageref = os.path.splitext(os.path.basename(imagecoreg))[0]
         imagedir = os.path.splitext(imagecoreg)[0] + '.data/'
@@ -536,85 +756,6 @@ class model():
         else:
             lrygrid = self.s2gridrefy[int(self.epsgout)] - int((self.s2gridrefy[float(self.epsgout)] - lry) / self.spatialres)*self.spatialres
         return (ulxgrid, ulygrid, lrxgrid, lrygrid)
-     
-    def generateGeocoding(self):
-        if self.overwrite == '1':
-            from snappy import ProductIO, GPF, HashMap
-            self.generate_baselinelist()
-            gptxml_file = os.path.join(self.DirProject, 'RES', 'ifg_ortholatlon.xml')
-            indexGC = int(self.baselinefiltered[['Perp_Baseline']].idxmax())
-            inputfile1 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Master_date']]['Outputfiles_align'+self.sufix].tolist()[0]
-            inputfile2 = self.processdf[self.processdf['ImageDate_str']==self.baselinefiltered.loc[indexGC]['Slave_date']]['Outputfiles_align'+self.sufix].tolist()[0]
-            date1 = self.baselinefiltered.loc[indexGC]['Master_date']
-            date2 = self.baselinefiltered.loc[indexGC]['Slave_date']
-            outputdir = os.path.join(self.diroutorder, self.subdiroutgc)
-            outputfile = os.path.join(outputdir, 'ifg_gc_'+date1+'_'+date2+'.dim')
-            print("[*] Geocoding step")
-            print([self.pathgpt, gptxml_file, '-Pinput1='+inputfile1, '-Pinput2='+inputfile2, '-Ptarget1='+outputfile])
-            try:
-                p = subprocess.check_output([self.pathgpt, gptxml_file, '-Pinput1='+inputfile1, '-Pinput2='+inputfile2, '-Ptarget1='+outputfile])
-            except Exception as e:
-                raise e
-    #         finally:
-    #             p.terminate() # send sigterm, or ...
-    #             p.kill()      # send sigkill        
-            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLon.img'), os.path.join(outputdir, 'orthorectifiedLon.img'))
-            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLon.hdr'), os.path.join(outputdir, 'orthorectifiedLon.hdr'))
-            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLat.img'), os.path.join(outputdir, 'orthorectifiedLat.img'))
-            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'orthorectifiedLat.hdr'), os.path.join(outputdir, 'orthorectifiedLat.hdr'))
-            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'tie_point_grids', 'incident_angle.img'), os.path.join(outputdir, 'incident_angle.img'))
-            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'tie_point_grids', 'incident_angle.hdr'), os.path.join(outputdir, 'incident_angle.hdr'))
-            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.img'), os.path.join(outputdir, 'elevation.img'))
-            shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.hdr'), os.path.join(outputdir, 'elevation.hdr')) 
-            #If ortho latlon numpy matrices needed
-            prod = ProductIO.readProduct(outputfile)
-            #ortho_lat = prod.getBand('orthorectifiedLat')
-            #ortho_lon = prod.getBand('orthorectifiedLon')
-            w = prod.getSceneRasterWidth()
-            h = prod.getSceneRasterHeight()
-    #         array = np.zeros((w, h), dtype=np.float32)
-    #         latpix = ortho_lat.readPixels(0, 0, w, h, array)
-    #         lonpix = ortho_lon.readPixels(0, 0, w, h, array)
-    #         np.save(os.path.join(outputdir, 'lat'), latpix)
-    #         np.save(os.path.join(outputdir, 'lon'), lonpix)
-            #Management of CRS, by default UTM, zone according to longitude
-    #         try:
-    #             print(self.epsgout)
-    #         except AttributeError:
-    #             zone = int((np.mean(lonpix) + 180) / 6) + 1
-    #             if np.mean(latpix)>0:
-    #                 south = False
-    #             else:
-    #                 south = True
-    #             crs = CRS.from_dict({'proj': 'utm', 'zone': zone, 'south': south})
-    #             self.epsgout = crs.to_authority()[1]
-    #         if not hasattr(self, 'spatialres'):
-    #             self.spatialres = 10
-            #Resampling
-    #         inProj = 'epsg:'+self.epsgin
-    #         outProj = 'epsg:'+self.epsgout
-    #         transformer = Transformer.from_crs(inProj, outProj)
-    #         self.x, self.y = transformer.transform(lonpix,latpix)
-    #         np.save(os.path.join(outputdir, 'x'), self.x)
-    #         np.save(os.path.join(outputdir, 'y'), self.y)
-            #Incident angle
-            inc = prod.getRasterDataNode('incident_angle')
-            theta = np.zeros((h, w), dtype=np.float32)
-            theta = inc.readPixels(0, 0, w, h, theta)
-    #         np.save(os.path.join(outputdir, 'incid_angle'), theta)
-            self.array2raster(os.path.join(outputdir, 'incid_angle.img'), (0, 0), 1, -1, theta)
-            #ProductIO.writeProduct(theta, os.path.join(outputdir, 'incident_angle.img'), None)
-            #Adjust to the Sentinel 2 grid
-    #         ulxgrid, ulygrid, lrxgrid, lrygrid = self.check_S2grid(np.min(self.x), np.max(self.y), np.max(self.x), np.min(self.y))
-    #         wout = int((lrxgrid - ulxgrid) / self.spatialres)
-    #         hout = int((ulygrid - lrygrid) / self.spatialres)
-    #         x1 = np.linspace(lrxgrid, ulxgrid, wout+1)
-    #         y1 = np.linspace(lrygrid, ulygrid, hout+1)
-    #         grid_x, grid_y = np.meshgrid(x1,y1)
-            # inci_grid = griddata((self.x.flatten(), self.y.flatten()), theta.flatten(), (grid_x, grid_y), method='nearest')
-            # np.save(os.path.join(outputdir, 'incid_angle_EPSG'+self.epsgout, inci_grid))   
-        msg = 'Geocoding generated'
-        return msg
 
     def compute_phase(self, inputdir, polariz, outputfile):
             realband = gdal.Open(glob(os.path.join(inputdir, 'i_ifg_' + polariz + '*.img'))[0])
@@ -696,9 +837,7 @@ class model():
                 p = subprocess.check_output([self.snaphupath, '-s', outblockfile, str(row[4]-row[2]), '-o', outblockunwrap, '-c', cohblockfile, '-f', self.snaphuconf])
             except Exception as e:
                 raise e
-#             finally:
-#                 p.terminate() # send sigterm, or ...
-#                 p.kill()      # send sigkill               
+            
             shutil.copyfile(outblockfile.replace('img', 'hdr'), outblockunwrap.replace('img', 'hdr'))
             unwrapfilelist.append(outblockunwrap)
         #Setup of complete matrix

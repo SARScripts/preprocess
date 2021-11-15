@@ -42,7 +42,13 @@ if __name__ == "__main__":
                 print ("SNAPHU_CONFFILE:" + snaphuconf)    
             if "NUMBER_CORES" in line:
                 num_cores = controlslash(line.split('=')[1].strip())
-                print ("NUMBER_CORES:" + num_cores)
+                print ("NUMBER_CORES:" + num_cores)    
+            if "COMPUTE_INTERFEROGRAM" in line:
+                compute_interferogram = controlslash(line.split('=')[1].strip())
+                print ("COMPUTE_INTERFEROGRAM:" + compute_interferogram)    
+            if "COMPUTE_PHASE" in line:
+                compute_phase = controlslash(line.split('=')[1].strip())
+                print ("COMPUTE_PHASE:" + compute_phase)
     finally:
             in_file.close()
             
@@ -65,7 +71,6 @@ if __name__ == "__main__":
         # First process will always be coregistration of images
         if orders.Process_type[0] != 'alignment_interferogram':
             sys.exit('Preprocessing must start with coregistration of a list of images')
-            
         if orders.Process_type[i] == 'alignment_interferogram':
             Process = preproc.model(orders.Process_type[i], 
                             orders.Parameter_list.values[i].split(',')[0], 
@@ -79,24 +84,12 @@ if __name__ == "__main__":
                             snaphupath,
                             snaphuconf,
                             DirProj,
-                            int(num_cores))
+                            int(num_cores),
+                            int(compute_interferogram),
+                            int(compute_phase))
             # Parameters check
             if (not os.path.isfile(orders.Parameter_list.values[0].split(',')[0])):
                 sys.exit('Introduce a file with a list of image paths')
-            msg = Process.coregistration_ifg()
-            print(msg)
-#         if orders.Process_type[i] == 'generate_list':
-#             print("[*] GENERATE LIST")
-#             if Process.processdf is not None:
-#                 for im in Process.processdf['Outputfiles_align']:
-#                     if not os.path.isfile(im):
-#                         sys.exit('Outputs from coregistration processing not found (' + im + ')')
-#                 print(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
-#                 print(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
-#                 Process.maxbasetemp = float(orders.Parameter_list.values[i].split(',')[0].replace(' ', ''))
-#                 Process.maxbaseperp = float(orders.Parameter_list.values[i].split(',')[1].replace(' ', ''))
-#                 Process.generate_baselinelist()
-#             else:
-#                 sys.exit('Image list does not match with alignment preprocess list')
+            Process.coregistration_ifg()
 
     print('Processing time: ', (datetime.now()-time1).seconds/60)
