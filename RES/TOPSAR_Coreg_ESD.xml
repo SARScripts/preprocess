@@ -23,7 +23,7 @@
       <subswath>$input3</subswath>
       <selectedPolarisations>$input5</selectedPolarisations>
       <firstBurstIndex>1</firstBurstIndex>
-      <lastBurstIndex>9</lastBurstIndex>
+      <lastBurstIndex>9999</lastBurstIndex>
       <wktAoi>$input4</wktAoi>
     </parameters>
   </node>
@@ -36,7 +36,7 @@
       <subswath>$input3</subswath>
       <selectedPolarisations>$input5</selectedPolarisations>
       <firstBurstIndex>1</firstBurstIndex>
-      <lastBurstIndex>9</lastBurstIndex>
+      <lastBurstIndex>9999</lastBurstIndex>
       <wktAoi>$input4</wktAoi>
     </parameters>
   </node>
