@@ -17,7 +17,7 @@
       <srpPolynomialDegree>5</srpPolynomialDegree>
       <srpNumberPoints>501</srpNumberPoints>
       <orbitDegree>3</orbitDegree>
-      <includeCoherence>true</includeCoherence>
+      <includeCoherence>false</includeCoherence>
       <cohWinAz>3</cohWinAz>
       <cohWinRg>10</cohWinRg>
       <squarePixel>true</squarePixel>
