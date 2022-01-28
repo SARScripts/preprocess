@@ -30,7 +30,7 @@
       <cohWinRg>10</cohWinRg>
       <squarePixel>true</squarePixel>
       <subtractTopographicPhase>true</subtractTopographicPhase>
-      <demName>SRTM 3Sec</demName>
+      <demName>Copernicus 30m Global DEM</demName>
       <externalDEMFile/>
       <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
       <externalDEMApplyEGM>true</externalDEMApplyEGM>
