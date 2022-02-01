@@ -1,0 +1,176 @@
+<graph id="Graph">
+  <version>1.0</version>
+  <node id="Read">
+    <operator>Read</operator>
+    <sources/>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>/mnt/CEPH_BASEDATA/SATELLITE/SENTINEL/SENTINEL-1/IW/SLC/S1B_IW_SLC__1SDV_20181014T052558_20181014T052625_013144_018497_403F.zip</file>
+    </parameters>
+  </node>
+  <node id="Calibration">
+    <operator>Calibration</operator>
+    <sources>
+      <sourceProduct refid="SliceAssembly"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <sourceBands/>
+      <auxFile>Latest Auxiliary File</auxFile>
+      <externalAuxFile/>
+      <outputImageInComplex>true</outputImageInComplex>
+      <outputImageScaleInDb>false</outputImageScaleInDb>
+      <createGammaBand>false</createGammaBand>
+      <createBetaBand>false</createBetaBand>
+      <selectedPolarisations>VH,VV</selectedPolarisations>
+      <outputSigmaBand>true</outputSigmaBand>
+      <outputGammaBand>false</outputGammaBand>
+      <outputBetaBand>false</outputBetaBand>
+    </parameters>
+  </node>
+  <node id="TOPSAR-Split">
+    <operator>TOPSAR-Split</operator>
+    <sources>
+      <sourceProduct refid="Calibration"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <subswath>IW2</subswath>
+      <selectedPolarisations/>
+      <firstBurstIndex>5</firstBurstIndex>
+      <lastBurstIndex>15</lastBurstIndex>
+      <wktAoi>POLYGON ((10.373840332031248 47.0925655522357, 10.373840332031248 45.675482175606476, 12.33489990234375 45.675482175606476, 12.33489990234375 47.0925655522357, 10.373840332031248 47.0925655522357))</wktAoi>
+    </parameters>
+  </node>
+  <node id="Apply-Orbit-File">
+    <operator>Apply-Orbit-File</operator>
+    <sources>
+      <sourceProduct refid="TOPSAR-Split"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <orbitType>Sentinel Precise (Auto Download)</orbitType>
+      <polyDegree>3</polyDegree>
+      <continueOnFail>false</continueOnFail>
+    </parameters>
+  </node>
+  <node id="TOPSAR-Deburst">
+    <operator>TOPSAR-Deburst</operator>
+    <sources>
+      <sourceProduct refid="Apply-Orbit-File"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <selectedPolarisations/>
+    </parameters>
+  </node>
+  <node id="Terrain-Correction">
+    <operator>Terrain-Correction</operator>
+    <sources>
+      <sourceProduct refid="TOPSAR-Deburst"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <sourceBands/>
+      <demName>Copernicus 30m Global DEM</demName>
+      <externalDEMFile/>
+      <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
+      <externalDEMApplyEGM>true</externalDEMApplyEGM>
+      <demResamplingMethod>BILINEAR_INTERPOLATION</demResamplingMethod>
+      <imgResamplingMethod>BILINEAR_INTERPOLATION</imgResamplingMethod>
+      <pixelSpacingInMeter>10.0</pixelSpacingInMeter>
+      <pixelSpacingInDegree>8.983152841195215E-5</pixelSpacingInDegree>
+      <mapProjection>PROJCS[&quot;WGS 84 / UTM zone 32N&quot;, 
+  GEOGCS[&quot;WGS 84&quot;, 
+    DATUM[&quot;World Geodetic System 1984&quot;, 
+      SPHEROID[&quot;WGS 84&quot;, 6378137.0, 298.257223563, AUTHORITY[&quot;EPSG&quot;,&quot;7030&quot;]], 
+      AUTHORITY[&quot;EPSG&quot;,&quot;6326&quot;]], 
+    PRIMEM[&quot;Greenwich&quot;, 0.0, AUTHORITY[&quot;EPSG&quot;,&quot;8901&quot;]], 
+    UNIT[&quot;degree&quot;, 0.017453292519943295], 
+    AXIS[&quot;Geodetic longitude&quot;, EAST], 
+    AXIS[&quot;Geodetic latitude&quot;, NORTH], 
+    AUTHORITY[&quot;EPSG&quot;,&quot;4326&quot;]], 
+  PROJECTION[&quot;Transverse_Mercator&quot;, AUTHORITY[&quot;EPSG&quot;,&quot;9807&quot;]], 
+  PARAMETER[&quot;central_meridian&quot;, 9.0], 
+  PARAMETER[&quot;latitude_of_origin&quot;, 0.0], 
+  PARAMETER[&quot;scale_factor&quot;, 0.9996], 
+  PARAMETER[&quot;false_easting&quot;, 500000.0], 
+  PARAMETER[&quot;false_northing&quot;, 0.0], 
+  UNIT[&quot;m&quot;, 1.0], 
+  AXIS[&quot;Easting&quot;, EAST], 
+  AXIS[&quot;Northing&quot;, NORTH], 
+  AUTHORITY[&quot;EPSG&quot;,&quot;32632&quot;]]</mapProjection>
+      <alignToStandardGrid>false</alignToStandardGrid>
+      <standardGridOriginX>0.0</standardGridOriginX>
+      <standardGridOriginY>0.0</standardGridOriginY>
+      <nodataValueAtSea>true</nodataValueAtSea>
+      <saveDEM>false</saveDEM>
+      <saveLatLon>false</saveLatLon>
+      <saveIncidenceAngleFromEllipsoid>false</saveIncidenceAngleFromEllipsoid>
+      <saveLocalIncidenceAngle>false</saveLocalIncidenceAngle>
+      <saveProjectedLocalIncidenceAngle>false</saveProjectedLocalIncidenceAngle>
+      <saveSelectedSourceBand>true</saveSelectedSourceBand>
+      <saveLayoverShadowMask>true</saveLayoverShadowMask>
+      <outputComplex>false</outputComplex>
+      <applyRadiometricNormalization>false</applyRadiometricNormalization>
+      <saveSigmaNought>false</saveSigmaNought>
+      <saveGammaNought>false</saveGammaNought>
+      <saveBetaNought>false</saveBetaNought>
+      <incidenceAngleForSigma0>Use projected local incidence angle from DEM</incidenceAngleForSigma0>
+      <incidenceAngleForGamma0>Use projected local incidence angle from DEM</incidenceAngleForGamma0>
+      <auxFile>Latest Auxiliary File</auxFile>
+      <externalAuxFile/>
+    </parameters>
+  </node>
+  <node id="Read(2)">
+    <operator>Read</operator>
+    <sources/>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>/mnt/CEPH_BASEDATA/SATELLITE/SENTINEL/SENTINEL-1/IW/SLC/S1B_IW_SLC__1SDV_20181014T052623_20181014T052651_013144_018497_D2F5.zip</file>
+    </parameters>
+  </node>
+  <node id="SliceAssembly">
+    <operator>SliceAssembly</operator>
+    <sources>
+      <sourceProduct refid="Read(2)"/>
+      <sourceProduct.1 refid="Read"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <selectedPolarisations>VH,VV</selectedPolarisations>
+    </parameters>
+  </node>
+  <node id="Write">
+    <operator>Write</operator>
+    <sources>
+      <sourceProduct refid="Terrain-Correction"/>
+    </sources>
+    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
+      <file>/home/btufail@eurac.edu/S1B_IW_SLC__1SDV_20181014T052558_20181014T052651_013144_018497_403F_Asm_Cal_Orb_Deb_TC.dim</file>
+      <formatName>BEAM-DIMAP</formatName>
+    </parameters>
+  </node>
+  <applicationData id="Presentation">
+    <Description/>
+    <node id="Read">
+            <displayPosition x="22.0" y="133.0"/>
+    </node>
+    <node id="Calibration">
+      <displayPosition x="145.0" y="173.0"/>
+    </node>
+    <node id="TOPSAR-Split">
+      <displayPosition x="247.0" y="144.0"/>
+    </node>
+    <node id="Apply-Orbit-File">
+      <displayPosition x="361.0" y="147.0"/>
+    </node>
+    <node id="TOPSAR-Deburst">
+      <displayPosition x="481.0" y="145.0"/>
+    </node>
+    <node id="Terrain-Correction">
+      <displayPosition x="569.0" y="186.0"/>
+    </node>
+    <node id="Read(2)">
+      <displayPosition x="28.0" y="62.0"/>
+    </node>
+    <node id="SliceAssembly">
+      <displayPosition x="101.0" y="106.0"/>
+    </node>
+    <node id="Write">
+            <displayPosition x="703.0" y="153.0"/>
+    </node>
+  </applicationData>
+</graph>
