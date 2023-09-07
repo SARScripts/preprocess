@@ -16,6 +16,8 @@ dependencies:
   - pyproj
   - python-dateutil
   - scipy
+  - rasterio
+  - ruamel.yaml
   - pip
   - pip:
     - git+https://github.com/pbrotoisworo/s1-tops-split-analyzer.git
