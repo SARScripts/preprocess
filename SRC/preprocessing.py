@@ -34,12 +34,6 @@ if __name__ == "__main__":
             if "SNAPPY_FOLDER" in line:
                 snappypath = controlslash(line.split('=')[1].strip())
                 print ("SNAPPY_FOLDER:" + snappypath)
-            if "SNAPHU_FOLDER" in line:
-                snaphupath = controlslash(line.split('=')[1].strip())
-                print ("SNAPHU_FOLDER:" + snaphupath)
-            if "SNAPHU_CONFFILE" in line:
-                snaphuconf = controlslash(line.split('=')[1].strip())
-                print ("SNAPHU_CONFFILE:" + snaphuconf)    
             if "NUMBER_CORES" in line:
                 num_cores = controlslash(line.split('=')[1].strip())
                 print ("NUMBER_CORES:" + num_cores)    
@@ -81,8 +75,6 @@ if __name__ == "__main__":
                             orders.Parameter_list.values[i].split(',')[5].replace(' ', '').split('calib=')[1], 
                             pathgpt,
                             snappypath,
-                            snaphupath,
-                            snaphuconf,
                             DirProj,
                             int(num_cores),
                             int(compute_interferogram),

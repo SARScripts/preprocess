@@ -25,6 +25,8 @@ def main():
     logging.info('[*] Looking for S1 zip files in {}'.format(s1_zips_path))
     
     s1_files_list = glob(s1_zips_path + '*IW_SLC__1SDV*.zip')
+    # If you want to get only data for specific years, you can use and modify the following line:
+    # s1_files_list = [i for i in s1_files_list if '1SDV_2022' in i]
     
     logging.info('[*] Found {} S1 SLC zip files.'.format(len(s1_files_list)))
     
@@ -35,8 +37,6 @@ def main():
     output_list = Parallel(n_jobs=64)(joblibDelayed(check_zip_orbit)(zip_path,orbit) for zip_path in s1_files_list)
     
     filtered_output_list = [i for i in output_list if i is not None]
-    # If you want to get only data for specific years, you can use and modify the following line:
-    # filtered_output_list = [i for i in filtered_output_list if ('1SDV_2018' in i) | ('1SDV_2019' in i) | ('1SDV_2020' in i) | ('1SDV_2021' in i) | ('1SDV_2022' in i)]
     
     logging.info('[*] Found {} S1 SLC zip files for the orbit {}'.format(len(filtered_output_list),orbit))
 
@@ -46,7 +46,7 @@ def main():
     sorted_zipped_lists = sorted(zip(filtered_output_list,sensing_dates), key = lambda x: x[1])
     sorted_output_list = list(list(zip(*sorted_zipped_lists))[0])
 
-    # Filter the zips and keep only the ones covering South Tyrol
+    # Filter the zips and keep only the ones covering South Tyrol. Change this shapefile/vector file to match a different area
 
     st_gdf = gpd.read_file('./AUXDATA/ST.shp')
     st_gdf_4326 = st_gdf.to_crs('EPSG:4326')
@@ -94,12 +94,12 @@ def main():
             if count < 2: # We need to remove this zip
                 st_list_filtered.remove(f)
                 
-    logging.info('[*] Found {} S1 SLC zip files for the orbit {} over South Tyrol'.format(len(st_list_filtered),orbit))
+    logging.info('[*] Found {} S1 SLC zip files for the orbit {}'.format(len(st_list_filtered),orbit))
 
     output_lines = [str(i+1) + ';' + f + '\n' for i,f in enumerate(st_list_filtered)]
     output_lines = ['Index;Image\n'] + output_lines
     
-    filename = 'images_ASC_2016_2022_SouthTyrol.csv'
+    filename = f'S1_SLC_images_{orbit}.csv'
     
     with open(filename,'w') as file:
         file.writelines(output_lines)
