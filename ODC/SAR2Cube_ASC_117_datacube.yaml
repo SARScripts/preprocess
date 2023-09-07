@@ -1,0 +1,60 @@
+name: SAR2Cube_ASC_117_datacube
+description: Sentinel-1 SLC Data pre-processed with SNAP.
+metadata_type: eo3
+
+metadata:
+    product:
+        name: SAR2Cube_ASC_117_datacube
+    title: Sentinel-1 SLC SAR2Cube pre-processed
+    
+load:
+  crs: EPSG:32632
+  resolution: 
+    x: 1
+    y: -1
+
+measurements:
+    - name: 'i_VV'
+      dtype: float32
+      nodata: 0
+      units: '1'
+
+    - name: 'q_VV'
+      dtype: float32
+      nodata: 0
+      units: '1'
+
+    - name: 'i_VH'
+      dtype: float32
+      nodata: 0
+      units: '1'
+
+    - name: 'q_VH'
+      dtype: float32
+      nodata: 0
+      units: '1'
+
+    - name: 'phase'
+      dtype: float32
+      nodata: 0
+      units: '1'
+
+    - name: 'LIA'
+      dtype: float32
+      nodata: 0
+      units: '1'
+
+    - name: 'DEM'
+      dtype: float32
+      nodata: 0
+      units: '1'
+
+    - name: 'grid_lon'
+      dtype: float32
+      nodata: 0
+      units: '1'
+
+    - name: 'grid_lat'
+      dtype: float32
+      nodata: 0
+      units: '1'

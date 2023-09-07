@@ -1,7 +1,8 @@
-name: s2cprod
+name: sar2cube
 channels:
   - conda-forge
 dependencies:
+  - python=3.6
   - gdal
   - geos
   - geotiff
@@ -10,9 +11,11 @@ dependencies:
   - joblib
   - numpy
   - pandas
-  - pip
+  - geopandas
   - pthread-stubs
   - pyproj
-  - python=3.6
   - python-dateutil
   - scipy
+  - pip
+  - pip:
+    - git+https://github.com/pbrotoisworo/s1-tops-split-analyzer.git

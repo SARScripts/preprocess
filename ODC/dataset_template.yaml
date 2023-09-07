@@ -1,0 +1,30 @@
+# UUID of the dataset
+id: UUID
+$schema: 'https://schemas.opendatacube.org/dataset'
+
+# Product name
+
+title: Sentinel-1 SLC SAR2Cube pre-processed
+# Native CRS, assumed to be the same across all bands
+crs: PRODUCT_CRS
+grids:
+    default:  # "default" grid must be present
+       shape: [0, 0]
+       transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+
+measurements:
+   BAND_0:               # Band using "default" grid should omit `grid` key
+     path: FILEPATH    # Path relative to the dataset location
+
+properties:
+  datetime: 2022-08-22T00:00:01.000Z  # Use UTC
+  odc:file_format: BEAM-DIMAP
+  eo:platform: SENTINEL_1
+  product_type: SAR2Cube
+  eo:instrument: C-SAR
+  sat:orbit_state: ascending
+  sat:relative_orbit: 117
+
+accessories:
+  metadata:baselines:
+    path: baselines.csv
