@@ -107,8 +107,8 @@ class model():
         if not os.path.exists(self.diroutorder):
             os.makedirs(self.diroutorder)            
         sys.path.append(self.snappypath)
-        import snappy
-        from snappy import ProductIO
+        # import esa_snappy
+        from esa_snappy import ProductIO
 
 
     def coregistration_ifg (self):
@@ -506,6 +506,7 @@ class model():
             shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.img'), os.path.join(outputdir, 'elevation.img'))
             shutil.copy(os.path.join(os.path.splitext(outputfile)[0]+'.data', 'elevation.hdr'), os.path.join(outputdir, 'elevation.hdr')) 
             #If ortho latlon numpy matrices needed
+            from esa_snappy import ProductIO
             prod = ProductIO.readProduct(outputfile)
             w = prod.getSceneRasterWidth()
             h = prod.getSceneRasterHeight()
@@ -633,10 +634,9 @@ class model():
             os.rename(file, file.replace('_slv1', ''))
             filetemp = file.replace('_slv1', '')
             os.rename(filetemp, filetemp.replace(filetemp[filetemp.find('_slv3'):filetemp.find('_slv3')+15], ''))
-        for fold in ifgdir:
-            for file in glob(os.path.join(fold, '*.*')):
-                if 'coh' not in file and 'fep' not in file and 'tgp' not in file:
-                    os.remove(file)
+        for file in glob(os.path.join(ifgdir, '*.*')):
+            if 'coh' not in file and 'fep' not in file and 'tgp' not in file:
+                os.remove(file)
 
     def generate_baselinelist (self):
         self.baselinelist = self.processdf.copy()
@@ -660,7 +660,9 @@ class model():
             for i in range(len(waninglist)-1):
                 perp = round(float(waninglist['Perp_Baseline'][i+1]) - float(waninglist['Perp_Baseline'][0]), 2)
                 temp = int(round(float(waninglist['Temp_Baseline'][i+1]) - float(waninglist['Temp_Baseline'][0]), 0))
-                self.baselinelist = self.baselinelist.append(pd.Series([str(waninglist['Slave_date'][0]), str(waninglist['Slave_date'][i+1]), perp, temp, None], index=self.baselinelist.columns), ignore_index=True)
+                data_dict = dict(zip(list(self.baselinelist.columns),[str(waninglist['Slave_date'][0]), str(waninglist['Slave_date'][i+1]), perp, temp, None]))
+                dataframe_to_append = pd.DataFrame(data=data_dict,index=range(len(data_dict)-1))
+                self.baselinelist = pd.concat([self.baselinelist, dataframe_to_append], ignore_index=True)
             waninglist = waninglist.drop(0)
             waninglist.reset_index(drop=True, inplace=True)
         #Filter table with maxbasetemp and maxbaseperp

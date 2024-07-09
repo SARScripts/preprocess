@@ -2,22 +2,14 @@ name: sar2cube
 channels:
   - conda-forge
 dependencies:
-  - python=3.6
-  - gdal
-  - geos
-  - geotiff
-  - hdf4
-  - hdf5
+  - python=3.10
+  - xarray
   - joblib
   - numpy
   - pandas
   - geopandas
-  - pthread-stubs
-  - pyproj
-  - python-dateutil
-  - scipy
+  - rioxarray
   - rasterio
-  - ruamel.yaml
   - pip
   - pip:
     - git+https://github.com/pbrotoisworo/s1-tops-split-analyzer.git

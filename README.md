@@ -18,17 +18,17 @@ The main idea consist in coregistering a stack of Sentinel-1 SLC data, which wil
 
 ## ESA SNAP
 
-The preprocessing was tested with ESA SNAP version 9 and the Sentinel toolbox (not tested with the latest version 10).
- - You can install SNAP following the official instructions here: https://step.esa.int/main/download/snap-download/ 
+The preprocessing was tested with ESA SNAP 9 and 10 and the Sentinel toolbox. We suggest to use the latest SNAP 10, since it is compatible with recent Python versions and not limited to Python 3.6 like SNAP 9.
+ - Install SNAP following the official instructions here: https://step.esa.int/main/download/snap-download/ 
  - To enable the storage of the phase components, you need to recompile the Sentinel-1 toolbox, please read the discussion here:
 https://forum.step.esa.int/t/snap-compiled-from-source-to-set-output-phase-true/40096/8
- - You have to configure python snappy after creating the provided Python environment:
- https://senbox.atlassian.net/wiki/spaces/SNAP/pages/50855941/Configure+Python+to+use+the+SNAP-Python+snappy+interface
+ - Configure python snappy after creating the provided Python environment:
+    - [Instructions for SNAP 9](https://senbox.atlassian.net/wiki/spaces/SNAP/pages/50855941/Configure+Python+to+use+the+SNAP-Python+snappy+interface)
+    - [Instructions for SNAP 10](https://senbox.atlassian.net/wiki/spaces/SNAP/pages/2499051521/Configure+Python+to+use+the+new+SNAP-Python+esa+snappy+interface+SNAP+version+10)
 
 ## Python Environment
 
-Since ESA Snappy, the Python bindings for SNAP are compatible only with Python 3.6, we are limited to use this old Python version.
-Once SNAP 10 will be officially released, newer Python versions will be supported and these instructions will be updated.
+Please install SNAP 10, SNAP 9 wouldn't be compatible with the following Python environment.
 
 1. Install Anaconda to manage virtual environments. You can follow the instructions [here](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)
 2. Clone the repository and get into the repo folder:
@@ -43,10 +43,6 @@ conda env create -f sar2cube.yml
 4. Once the process is complete, you can activate the environment:
 ```
 conda activate sar2cube
-```
-5. If necessary, install the required libgfortran library by typing:
-```
-sudo apt-get install libgfortran5
 ```
 
 # SAR2Cube Preprocessing Workflow
